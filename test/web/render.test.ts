@@ -33,6 +33,11 @@ describe('page rendering', () => {
     expect(stripHtml([{ date: '2026-10-03', decisions: 3 }], '2026-10-03')).toMatch(/aria-current="date"/);
     expect(emptyDayHtml('2026-10-04')).toContain('No sessions recorded');
   });
+  it('never links non-GitHub commit urls', () => {
+    const bad = { ...day, commits: day.commits.map(c => ({ ...c, url: 'javascript:alert(1)' })) };
+    const html = dayHtml(bad, { private: true });
+    expect(html).not.toContain('javascript:'); expect(html).toContain('aaa1111 feat: Polly');
+  });
   it('summarizes a week', () => { expect(weekHtml([day])).toContain('1 decision'); });
 });
 

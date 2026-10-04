@@ -26,7 +26,7 @@ export async function status(): Promise<{ syncedAt: string | null }> {
   const r = await call('/status'); if (!r.ok) throw new Error(`status ${r.status}`); return r.json();
 }
 export async function listDays(): Promise<string[]> { const r = await call('/days'); if (r.status === 401) throw new Error('unauthorized'); if (!r.ok) throw new Error(`days ${r.status}`); return r.json(); }
-export async function getDay(date: string): Promise<DayLog | PublishedDay | null> { const r = await call(`/days/${date}`); return r.ok ? r.json() : null; }
+export async function getDay(date: string): Promise<DayLog | PublishedDay | null> { const r = await call(`/days/${date}`); if (r.status === 404) return null; if (!r.ok) throw new Error(`day ${r.status}`); return r.json(); }
 export async function askQuestion(question: string): Promise<{ answer: string; citations: { date: string; decision: string }[] }> {
   const r = await post('/ask', { question }); if (!r.ok) throw new Error(`ask ${r.status}`); return r.json();
 }

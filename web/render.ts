@@ -8,7 +8,10 @@ export function dayHtml(day: DayLog | PublishedDay, opts: { private: boolean }):
   const bySha = new Map(day.commits.map(c => [c.sha, c]));
   const decisions = day.decisions.map(d => {
     const original = opts.private && 'quoteOriginal' in d ? `<p class="original">${escapeHtml((d as { quoteOriginal: string }).quoteOriginal)}</p>` : '';
-    const commits = d.commits.map(s => bySha.get(s)).filter(c => c).map(c => `<a class="commit" href="${escapeHtml(c!.url)}" target="_blank" rel="noopener">${escapeHtml(c!.sha)} ${escapeHtml(c!.message)}</a>`).join('');
+    const commits = d.commits.map(s => bySha.get(s)).filter(c => c).map(c => {
+      const label = `${escapeHtml(c!.sha)} ${escapeHtml(c!.message)}`;
+      return /^https:\/\/github\.com\//i.test(c!.url) ? `<a class="commit" href="${escapeHtml(c!.url)}" target="_blank" rel="noopener">${label}</a>` : `<span class="commit">${label}</span>`;
+    }).join('');
     const forget = opts.private ? `<button class="link" data-action="forget" data-session="${escapeHtml(d.sessionId)}">Forget this session</button>` : '';
     return `<article class="decision"><h3>${escapeHtml(d.what)}</h3><p class="why"><b>Why:</b> ${escapeHtml(d.why)}</p>`
       + `<blockquote>${escapeHtml(d.quote)}<span class="at">${escapeHtml(time(d.at))}</span></blockquote>${original}<div class="commits">${commits}</div>${forget}</article>`;

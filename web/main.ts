@@ -11,7 +11,12 @@ let dayList: string[] | null = null;
 
 const notice = (msg: string) => { $('notice').textContent = msg; $('notice').classList.toggle('on', msg !== ''); };
 const days = async () => (dayList ??= await listDays());
-async function load(date: string) { if (!cache.has(date)) cache.set(date, await getDay(date)); return cache.get(date) ?? null; }
+async function load(date: string) {
+  if (!cache.has(date)) {
+    try { cache.set(date, await getDay(date)); } catch { notice(`Could not load ${date}. Reload to retry.`); return null; }
+  }
+  return cache.get(date) ?? null;
+}
 
 async function show(date: string) {
   selected = date;
@@ -30,7 +35,7 @@ async function boot() {
       cfg = await res.json() as Config;
     } catch { notice('Could not load the site configuration (/config.json). Try again in a moment.'); return; }
     let token: string | null;
-    try { token = await signIn(cfg); } catch { notice('Sign-in failed. Reload the page to try again.'); return; }
+    try { token = await signIn(cfg); } catch { notice('Sign-in failed — reload to try again.'); return; }
     if (!token) { notice('Signing in…'); return; }
     setToken(token);
     try {
@@ -68,7 +73,7 @@ const hit = (date: string, text: string) => `<button data-date="${escapeHtml(dat
 
 $('search').addEventListener('input', () => {
   const q = ($('search') as HTMLInputElement).value.toLowerCase();
-  const hits = [...cache.values()].filter((d): d is DayLog | PublishedDay => !!d).flatMap(d => d.decisions.filter(x => `${x.what} ${x.why}`.toLowerCase().includes(q)).map(x => ({ date: d.date, what: x.what })));
+  const hits = [...cache.values()].filter((d): d is DayLog | PublishedDay => !!d).flatMap(d => d.decisions.filter(x => `${x.what} ${x.why} ${x.quote}`.toLowerCase().includes(q)).map(x => ({ date: d.date, what: x.what })));
   $('results').innerHTML = q ? (hits.map(h => hit(h.date, h.what)).join('') || '<p class="empty">No matches.</p>') : '';
 });
 
@@ -80,7 +85,12 @@ async function answer(question: string) {
   $('answer').textContent = out.answer;
   $('citations').innerHTML = out.citations.map(c => hit(c.date, c.decision)).join('');
   const audio = await speak(out.answer).catch(() => null);
-  if (audio) void new Audio(URL.createObjectURL(audio)).play().catch(() => {});
+  if (audio) {
+    const url = URL.createObjectURL(audio); const a = new Audio(url);
+    const done = () => URL.revokeObjectURL(url);
+    a.addEventListener('ended', done); a.addEventListener('error', done);
+    void a.play().catch(done);
+  }
 }
 
 $('ask-form').addEventListener('submit', e => { e.preventDefault(); const q = ($('question') as HTMLInputElement).value.trim(); if (q) void answer(q); });
