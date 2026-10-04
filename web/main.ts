@@ -48,11 +48,16 @@ function setDay(html: string) {
 async function show(date: string) {
   selected = date;
   const day = await load(date);
+  if (selected !== date) return; // a newer click won; never render days out of order
   setDay(day ? dayHtml(day, { private: !demoMode() }) : emptyDayHtml(date));
   const list = (await days()).slice(0, CHIP_DAYS);
-  $('days').innerHTML = dayChipsHtml(await Promise.all(list.map(async d => ({ date: d, decisions: (await load(d))?.decisions.length ?? 0 }))), selected);
+  const chips = await Promise.all(list.map(async d => ({ date: d, decisions: (await load(d))?.decisions.length ?? 0 })));
+  if (selected !== date) return;
+  $('days').innerHTML = dayChipsHtml(chips, selected);
   $('days').querySelector('[aria-current="date"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
-  $('side').innerHTML = sideHtml(day, await weekOf(date));
+  const week = await weekOf(date);
+  if (selected !== date) return;
+  $('side').innerHTML = sideHtml(day, week);
 }
 
 async function boot() {
@@ -83,9 +88,12 @@ async function boot() {
     } catch { notice('Signed in, but the server did not answer. Reload to retry.'); return; }
   }
   const list = await days();
-  if (list.length === 0) { setDay(emptyDayHtml(new Date().toISOString().slice(0, 10))); $('side').innerHTML = sideHtml(null, []); return; }
+  if (list.length === 0) { setDay(emptyDayHtml(todayInMexicoCity())); $('side').innerHTML = sideHtml(null, []); return; }
   await show(list[0]!);
 }
+
+/** Today's calendar day for the owner (America/Mexico_City), as YYYY-MM-DD. */
+const todayInMexicoCity = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 
 const closeMenus = () => document.querySelectorAll('details.owner-menu[open]').forEach(d => d.removeAttribute('open'));
 
@@ -98,14 +106,16 @@ document.addEventListener('click', async ev => {
   if (action === 'publish') {
     closeMenus();
     // Preview first: the owner sees exactly what the judges will see, already filtered, then approves.
-    const preview = await api.previewPublish(el.dataset.date!);
+    let preview: Awaited<ReturnType<Backend['previewPublish']>>;
+    try { preview = await api.previewPublish(el.dataset.date!); } catch { preview = null; }
     if (!preview) { notice('Could not build the preview.'); return; }
     setDay(previewBarHtml(el.dataset.date!) + dayHtml(preview, { private: false }));
     $('day').focus({ preventScroll: true });
     return;
   }
   if (action === 'confirm-publish') {
-    const ok = await api.publish(el.dataset.date!);
+    let ok: boolean;
+    try { ok = await api.publish(el.dataset.date!); } catch { ok = false; }
     await show(selected);
     if (ok) notice("Published to the judges' demo.", true); else notice('Publishing failed. Try again.');
     return;
@@ -114,7 +124,8 @@ document.addEventListener('click', async ev => {
   if (action === 'forget') {
     closeMenus();
     if (confirm('Forget this session and everything derived from it? This cannot be undone.')) {
-      const ok = await api.forget(el.dataset.session!);
+      let ok: boolean;
+      try { ok = await api.forget(el.dataset.session!); } catch { ok = false; }
       cache.clear(); dayList = null; await show(selected);
       if (ok) notice('Session forgotten.', true); else notice('Could not forget the session. Try again.');
     }
@@ -170,15 +181,17 @@ $('close-answer').addEventListener('click', closeAnswer);
 type Rec = { lang: string; onresult: (e: { results: { 0: { transcript: string } }[] }) => void; onend: (() => void) | null; start(): void };
 const w = window as unknown as { SpeechRecognition?: new () => Rec; webkitSpeechRecognition?: new () => Rec };
 const Recognition = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+let listening = false;
 $('mic').addEventListener('click', () => {
+  if (listening) return; // one recognition at a time
   if (!Recognition) { input('question').focus(); notice('Voice input is not available in this browser. Type your question instead.'); return; }
   const mic = $('mic');
   const r = new Recognition();
   r.lang = 'en-US';
   r.onresult = e => { const q = e.results[0]![0].transcript; input('question').value = q; void answer(q); };
-  r.onend = () => { mic.classList.remove('listening'); mic.setAttribute('aria-pressed', 'false'); };
-  mic.classList.add('listening'); mic.setAttribute('aria-pressed', 'true');
-  r.start();
+  r.onend = () => { listening = false; mic.classList.remove('listening'); mic.setAttribute('aria-pressed', 'false'); };
+  listening = true; mic.classList.add('listening'); mic.setAttribute('aria-pressed', 'true');
+  try { r.start(); } catch { listening = false; mic.classList.remove('listening'); mic.setAttribute('aria-pressed', 'false'); }
 });
 
 void boot().catch(() => notice('Something went wrong loading the log. Reload to retry.'));
