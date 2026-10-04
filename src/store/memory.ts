@@ -15,7 +15,7 @@ export class MemoryStore implements Store {
     this.cursor = { cursor, syncedAt };
   }
 
-  async putSession(session: Session, day: string): Promise<boolean> {
+  async putSession(session: Session, day: string, rawTtlEpochSeconds?: number): Promise<boolean> {
     if (this.sessions.has(session.id)) return false;
     this.sessions.set(session.id, {
       session: structuredClone(session),
