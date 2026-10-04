@@ -58,8 +58,9 @@ document.addEventListener('click', async e => {
     const preview = await previewPublish(el.dataset.date!);
     if (!preview) { notice('Could not build the preview.'); return; }
     $('day').innerHTML = `<p class="banner">Preview of what the judges will see</p>${dayHtml(preview, { private: false })}`;
-    if (confirm('Publish this preview to the judges\' demo?')) await publish(el.dataset.date!);
+    const ok = confirm("Publish this preview to the judges' demo?") ? await publish(el.dataset.date!) : true;
     await show(selected);
+    if (!ok) notice('Publishing failed. Try again.');
     return;
   }
   if (el.dataset.action === 'forget') {
