@@ -3,6 +3,7 @@ import { ask } from '../ask.js';
 import type { DayLog } from '../domain/types.js';
 import type { ConverseFn } from '../nova.js';
 import { forgetSession, publishDay, unpublishDay } from '../publish.js';
+import { log } from '../log.js';
 import { hideNames } from '../redact.js';
 import type { Speaker } from '../speech.js';
 import type { Store } from '../store/store.js';
@@ -33,10 +34,12 @@ export function createRouter(deps: { store: Store; converse: ConverseFn; speak: 
   const speech = async (body: string | null): Promise<ApiResponse> => {
     const b = parse(speechBody, body);
     if (!b) return json(400, { error: 'bad request' });
-    return { status: 200, headers: { 'content-type': 'audio/mpeg', 'cache-control': 'no-store' }, body: Buffer.from(await deps.speak(b.text)).toString('base64'), isBase64Encoded: true };
+    try {
+      return { status: 200, headers: { 'content-type': 'audio/mpeg', 'cache-control': 'no-store' }, body: Buffer.from(await deps.speak(b.text)).toString('base64'), isBase64Encoded: true };
+    } catch { return json(502, { error: 'speech unavailable' }); }
   };
 
-  return async (req: ApiRequest): Promise<ApiResponse> => {
+  const dispatch = async (req: ApiRequest): Promise<ApiResponse> => {
     const demo = req.path.startsWith('/demo/');
     const path = demo ? req.path.slice('/demo'.length) : req.path;
     if (demo) {
@@ -86,5 +89,12 @@ export function createRouter(deps: { store: Store; converse: ConverseFn; speak: 
       return json(200, await forgetSession({ store: deps.store, sessionId: b.sessionId, recompile: deps.recompile }));
     }
     return NOT_FOUND;
+  };
+
+  return async req => {
+    try { return await dispatch(req); } catch (err) {
+      log({ level: 'error', msg: 'api_error', route: req.path.split('?')[0], error: err instanceof Error ? err.name : 'unknown' });
+      return json(500, { error: 'internal' });
+    }
   };
 }

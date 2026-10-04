@@ -82,3 +82,56 @@ describe('api extras', () => {
     expect(res.body).toBe(Buffer.from([1, 2]).toString('base64'));
   });
 });
+
+describe('api hardening', () => {
+  const auth = { authorization: 'Bearer good' };
+  const SECRET = 'zebra-private-rationale-7731';
+  const secretDay: DayLog = { ...day, decisions: [{ what: SECRET, why: SECRET, quote: SECRET, at: 'a', sessionId: 's1', commits: [] }] };
+  const mk = async (over: Record<string, unknown> = {}) => {
+    const store = new MemoryStore();
+    await store.putDay(secretDay);
+    const prompts: string[] = [];
+    const converse = async (input: unknown): Promise<Message> => { prompts.push(JSON.stringify(input)); return { role: 'assistant', content: [] }; };
+    const route = createRouter({ store, converse: converse as never, speak: async () => new Uint8Array([1]), verify: async h => h === 'Bearer good', limits: new Limits(100, 1000), recompile: async () => null, now: () => new Date('2026-10-05T00:00:00Z'), ...over });
+    return { store, route, prompts };
+  };
+
+  it.each([
+    ['GET', '/days/2026-10-03', null], ['GET', '/search?q=x', null], ['POST', '/ask', '{"question":"q"}'], ['POST', '/speech', '{"text":"x"}'],
+    ['POST', '/publish', '{"date":"2026-10-03"}'], ['POST', '/unpublish', '{"date":"2026-10-03"}'], ['POST', '/forget', '{"sessionId":"s1"}']
+  ])('returns 401 for %s %s without sign-in', async (method, path, body) => {
+    const { route } = await mk();
+    const [p, q] = path.split('?');
+    const res = await route(req(method, p!, { body, query: q ? { q: q.slice(2) } : {} }));
+    expect(res.status).toBe(401);
+  });
+
+  it('never leaks a private decision through demo search or ask', async () => {
+    const { route, prompts } = await mk();
+    const s = await route(req('GET', '/demo/search', { query: { q: 'zebra' } }));
+    expect(s.body).toBe('[]');
+    const a = await route(req('POST', '/demo/ask', { body: JSON.stringify({ question: 'zebra?' }) }));
+    expect(a.body).not.toContain(SECRET);
+    expect(prompts.join('')).not.toContain(SECRET);
+  });
+
+  it('answers a path-traversal attempt under /demo with 404', async () => {
+    const { route } = await mk();
+    expect((await route(req('GET', '/demo/../days'))).status).toBe(404);
+  });
+
+  it('returns 502 when speech synthesis fails', async () => {
+    const { route } = await mk({ speak: async () => { throw new Error('polly down'); } });
+    const res = await route(req('POST', '/demo/speech', { body: '{"text":"hi"}' }));
+    expect(res.status).toBe(502);
+    expect(res.body).toBe('{"error":"speech unavailable"}');
+  });
+
+  it('returns a bare 500 when a store call throws', async () => {
+    const { store, route } = await mk();
+    store.listDays = async () => { throw new Error('secret detail'); };
+    const res = await route(req('GET', '/days', { headers: auth }));
+    expect(res.status).toBe(500);
+    expect(res.body).toBe('{"error":"internal"}');
+  });
+});
