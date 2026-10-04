@@ -18,7 +18,29 @@ function Write-SyncLog([string]$message) {
   }
 }
 
-$errFile = Join-Path $logDir 'sync.err.tmp'
+# Per-run stderr file; stale ones from killed runs are removed first.
+Get-ChildItem -Path $logDir -Filter '*.err.tmp' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+$errFile = Join-Path $logDir ('sync-{0}.err.tmp' -f [guid]::NewGuid().ToString('N'))
+
+# True only for a flat JSON object whose values are numbers or arrays of YYYY-MM-DD strings.
+function Test-CountsJson([string]$text) {
+  try { $obj = $text | ConvertFrom-Json } catch { return $false }
+  if ($null -eq $obj -or $obj -isnot [System.Management.Automation.PSCustomObject]) { return $false }
+  $props = @($obj.PSObject.Properties)
+  if ($props.Count -eq 0) { return $false }
+  foreach ($p in $props) {
+    $v = $p.Value
+    if ($v -is [int] -or $v -is [long] -or $v -is [double] -or $v -is [decimal]) { continue }
+    if ($v -is [System.Array]) {
+      foreach ($item in $v) {
+        if ($item -isnot [string] -or $item -notmatch '^\d{4}-\d{2}-\d{2}$') { return $false }
+      }
+      continue
+    }
+    return $false
+  }
+  return $true
+}
 try {
   $env:AWS_PROFILE = 'why-sync'
   $env:AWS_REGION = 'us-east-1'
@@ -35,16 +57,18 @@ try {
   $ErrorActionPreference = 'Stop'
 
   if ($code -ne 0) {
-    # Only an exception class name (e.g. ExpiredTokenException) is kept from stderr, never its text.
-    $err = ''
-    if (Test-Path $errFile) { $err = (Get-Content -Raw -Path $errFile) }
-    $name = [regex]::Match([string]$err, '\b[A-Za-z]+(Error|Exception)\b').Value
-    if (-not $name) { $name = 'exit code ' + $code }
+    # Only the class name on the first non-empty stderr line is kept, never its text.
+    $name = 'unknown'
+    if (Test-Path $errFile) {
+      $first = Get-Content -Path $errFile | Where-Object { $_.Trim() } | Select-Object -First 1
+      $m = [regex]::Match([string]$first, '^\s*([A-Za-z]+(Error|Exception))\b')
+      if ($m.Success) { $name = $m.Groups[1].Value }
+    }
     Write-SyncLog ('error: ' + $name)
     exit 1
   }
   $counts = ([string](@($stdout) | Select-Object -Last 1)).Trim()
-  Write-SyncLog $counts
+  if (Test-CountsJson $counts) { Write-SyncLog $counts } else { Write-SyncLog 'ok (unparsed output)' }
   exit 0
 } catch {
   # Exception type only: the message could carry paths or data.
