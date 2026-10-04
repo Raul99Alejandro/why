@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Why — your decisions, from Bee</title></head>
+<body>
+  <header class="top"><strong class="brand">Why</strong><span class="tag">Your work decisions, written from what Bee heard</span><span class="demo-label">Judges' demo · real Bee data, reviewed and published by the owner</span><span id="sync" class="sync"></span></header>
+  <div id="strip"></div>
+  <div id="notice" role="alert"></div>
+  <main><div id="day" aria-live="polite"></div><aside><input id="search" type="search" placeholder="Search decisions" aria-label="Search decisions"><div id="results"></div><div id="week"></div></aside></main>
+  <form id="ask-form" class="ask"><div class="ask-row"><button id="mic" type="button" aria-label="Ask by voice">🎙</button><input id="question" placeholder="Ask: what did we decide about…" maxlength="300" aria-label="Question"><button class="go">Ask</button></div><p id="answer" aria-live="polite"></p><div id="citations"></div></form>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>
