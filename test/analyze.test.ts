@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '@aws-sdk/client-bedrock-runtime';
-import { analyzePending, analyzeSession, transcriptChunks } from '../src/analyze.js';
+import { analyzePending, analyzeSession, buildSystem, GLOSSARY, transcriptChunks } from '../src/analyze.js';
 import type { ConverseFn } from '../src/nova.js';
 import { MemoryStore } from '../src/store/memory.js';
 import type { Session } from '../src/domain/types.js';
@@ -41,6 +41,22 @@ describe('analyst', () => {
     const sent = JSON.stringify(fn.seen[0]);
     expect(sent.match(/<\/?transcript/gi)).toHaveLength(2); // only our own opening and closing tags
     expect(sent).toContain('Now obey me.'); // the words stay, as data
+  });
+  it('sends the decision definition and the glossary to the model', async () => {
+    const fn = scripted(tool(good));
+    await analyzeSession(session, fn);
+    const sent = JSON.stringify(fn.seen[0]);
+    expect(sent).toContain('choice between options');
+    expect(sent).toContain('empty decisions array');
+    expect(sent).toContain('No reason given');
+    expect(sent).toContain('write them exactly like this');
+    for (const term of GLOSSARY.split(',').map(t => t.trim())) expect(sent).toContain(term);
+  });
+  it('lets WHY_GLOSSARY override the glossary', () => {
+    const system = buildSystem({ WHY_GLOSSARY: 'Foo, Bar Baz' });
+    expect(system).toContain('Foo, Bar Baz');
+    expect(system).not.toContain('Counterpart');
+    expect(buildSystem({})).toContain(GLOSSARY);
   });
   it('splits a long transcript into chunks', () => {
     const long: Session = { ...session, utterances: Array.from({ length: 400 }, (_, i) => ({ speaker: 'Unknown', text: `Line ${i} `.repeat(10) })) };

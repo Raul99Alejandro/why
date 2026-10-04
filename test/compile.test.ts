@@ -27,6 +27,28 @@ describe('compile', () => {
     expect(await compileDay({ day: '2026-10-03', store, converse: scripted(), repos: [], timeZone: 'America/Mexico_City', now: new Date() })).toBeNull();
     expect(await store.getDay('2026-10-03')).toBeNull();
   });
+  describe('commit matching guards', () => {
+    const many = (n: number) => Array.from({ length: n }, (_, i) => ({ repo: 'o/r', sha: `c${i}`, message: `m${i}`, url: 'u', at: '2026-10-03T19:00:00.000Z' }));
+    const two = [decision, { ...decision, what: 'Ship Friday' }];
+    const links = (l: { decision: number; commits: string[] }[]) => scripted(tool('save_commit_links', { links: l }));
+    it('keeps at most 3 commits per decision, in the model order', async () => {
+      const out = await matchCommits(two, many(10), links([{ decision: 0, commits: ['c4', 'nope', 'c2', 'c1', 'c0'] }]));
+      expect(out[0]!.commits).toEqual(['c4', 'c2', 'c1']);
+    });
+    it('keeps a commit linked to two decisions on the first one only', async () => {
+      const out = await matchCommits(two, many(10), links([{ decision: 0, commits: ['c1'] }, { decision: 1, commits: ['c1', 'c2'] }]));
+      expect(out.map(d => d.commits)).toEqual([['c1'], ['c2']]);
+    });
+    it('links nothing for a decision that takes more than half of a day with 6+ commits', async () => {
+      const all = many(20).map(c => c.sha);
+      const out = await matchCommits(two, many(20), links([{ decision: 0, commits: all.slice(0, 12) }, { decision: 1, commits: ['c13'] }]));
+      expect(out.map(d => d.commits)).toEqual([[], ['c13']]);
+    });
+    it('does not apply the majority guard to small days', async () => {
+      const out = await matchCommits([decision], many(4), links([{ decision: 0, commits: ['c0', 'c1', 'c2'] }]));
+      expect(out[0]!.commits).toEqual(['c0', 'c1', 'c2']);
+    });
+  });
   it('keeps decisions without commits when there are none to match', async () => {
     expect(await matchCommits([decision], [], scripted())).toEqual([decision]);
   });
