@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-web/
+cdk.out/
+data/
+*.local.json
+.env
+.env.*
+*.log

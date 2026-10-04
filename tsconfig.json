@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "es2023", "module": "nodenext", "moduleResolution": "nodenext",
+    "strict": true, "noUncheckedIndexedAccess": true, "skipLibCheck": true,
+    "esModuleInterop": true, "lib": ["es2023", "dom"], "types": ["node"]
+  },
+  "include": ["src", "test", "infra", "scripts", "web"]
+}

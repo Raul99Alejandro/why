@@ -1,0 +1,40 @@
+{
+  "name": "why",
+  "version": "0.1.0",
+  "description": "Bee turns your work sessions into a visual log of decisions: what you decided, why, and what is still open.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "sync": "tsx src/cli/sync.ts",
+    "web:dev": "vite web",
+    "web:build": "vite build web --outDir ../dist-web --emptyOutDir",
+    "cdk": "cdk --app \"npx tsx infra/bin/app.ts\"",
+    "battery": "tsx scripts/battery.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1141.0",
+    "@aws-sdk/client-dynamodb": "^3.1141.0",
+    "@aws-sdk/client-polly": "^3.1141.0",
+    "@aws-sdk/client-secrets-manager": "^3.1141.0",
+    "@aws-sdk/lib-dynamodb": "^3.1141.0",
+    "aws-jwt-verify": "^5.0.0",
+    "zod": "^4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "aws-cdk": "^2.1144.0",
+    "aws-cdk-lib": "^2.200.0",
+    "cdk-nag": "^2.30.0",
+    "constructs": "^10.4.0",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vite": "^6.4.3",
+    "vitest": "^5.0.1"
+  }
+}
