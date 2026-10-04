@@ -1,0 +1,23 @@
+import * as z from 'zod/v4';
+import type { DayLog, PublishedDay } from './domain/types.js';
+import { forcedTool, type ConverseFn } from './nova.js';
+
+export type Answer = { answer: string; citations: { date: string; sessionId: string; decision: string }[] };
+const schema = z.object({
+  answer: z.string().trim().min(1).describe('One or two English sentences, spoken aloud.'),
+  citations: z.array(z.object({ date: z.string(), sessionId: z.string(), decision: z.string() }))
+});
+const SCHEMA_JSON = (() => { const { $schema: _i, ...r } = z.toJSONSchema(schema, { io: 'input' }) as Record<string, unknown>; return r; })();
+const FALLBACK = "I couldn't find that in your log.";
+
+export async function ask(opts: { question: string; days: (DayLog | PublishedDay)[]; converse: ConverseFn }): Promise<Answer> {
+  const facts = opts.days.flatMap(d => d.decisions.map(x => `[${d.date} ${x.sessionId}] ${x.what} — because ${x.why}`));
+  const user = `Decisions log:\n${facts.join('\n') || '(empty)'}\n\nQuestion: ${opts.question}`;
+  const out = schema.safeParse(await forcedTool(opts.converse, {
+    system: 'You answer questions about a work log using only the decisions given. If the answer is not there, say you could not find it. Answer with the tool.',
+    user, name: 'answer_question', description: 'Answer and cite the decisions used.', schema: SCHEMA_JSON
+  }).catch(() => null));
+  if (!out.success) return { answer: FALLBACK, citations: [] };
+  const known = new Set(opts.days.flatMap(d => d.decisions.map(x => `${d.date}|${x.sessionId}|${x.what}`)));
+  return { answer: out.data.answer, citations: out.data.citations.filter(c => known.has(`${c.date}|${c.sessionId}|${c.decision}`)) };
+}
