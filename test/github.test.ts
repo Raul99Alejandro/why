@@ -17,16 +17,34 @@ describe('commitsOn', () => {
     expect(await commitsOn('2026-10-03', ['o/r'], 'America/Mexico_City', fetchFn)).toEqual([]);
   });
   it('validates repo names and skips invalid ones with a warning', async () => {
-    const logs: Record<string, unknown>[] = [];
-    const origLog = console.log;
-    // Capture log output
-    const logCapture = (entry: Record<string, unknown>) => logs.push(entry);
+    const calls: { url: string; }[] = [];
+    const fetchFn = (async (url: string) => {
+      calls.push({ url });
+      return new Response(JSON.stringify(api), { status: 200 });
+    }) as typeof fetch;
 
-    const fetchFn = (async () => new Response(JSON.stringify(api), { status: 200 })) as typeof fetch;
-    const out = await commitsOn('2026-10-03', ['invalid', 'o/r', 'also-bad!'], 'America/Mexico_City', fetchFn);
+    const stdoutLines: string[] = [];
+    const origWrite = process.stdout.write;
+    process.stdout.write = ((chunk: string) => {
+      stdoutLines.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
 
-    // Only valid repo should be processed
-    expect(out.length).toBeGreaterThanOrEqual(0);
-    expect(out.every(c => c.repo === 'o/r')).toBe(true);
+    try {
+      const out = await commitsOn('2026-10-03', ['o/r', 'bad repo', '../x'], 'America/Mexico_City', fetchFn);
+
+      // Only valid repo should be fetched
+      expect(calls.length).toBe(1);
+      expect(calls[0]?.url).toContain('/repos/o/r/');
+      expect(out).toEqual([{ repo: 'o/r', sha: 'aaa1111', message: 'feat: Polly voice', url: 'https://github.com/o/r/commit/aaa1111', at: '2026-10-04T01:00:00.000Z' }]);
+
+      // Verify warnings for invalid repos
+      const logOutput = stdoutLines.join('');
+      expect(logOutput).toContain('bad repo');
+      expect(logOutput).toContain('../x');
+      expect(logOutput).toContain('github_repo_invalid');
+    } finally {
+      process.stdout.write = origWrite;
+    }
   });
 });
