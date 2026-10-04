@@ -5,6 +5,7 @@ import {
   GetCommand,
   PutCommand,
   QueryCommand,
+  ScanCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { Analysis, DayLog, PublishedDay, Session, SessionState } from '../domain/types.js';
@@ -15,7 +16,6 @@ export async function createTable(table: string, endpoint: string): Promise<void
   const client = new DynamoDBClient({
     endpoint,
     region: 'us-east-1',
-    credentials: { accessKeyId: 'test', secretAccessKey: 'test' },
   });
   await client.send(
     new CreateTableCommand({
@@ -41,15 +41,9 @@ export class DynamoStore implements Store {
     private table: string,
     config: { endpoint?: string; region: string }
   ) {
-    this.doc = DynamoDBDocumentClient.from(
-      new DynamoDBClient({
-        ...config,
-        credentials: { accessKeyId: 'test', secretAccessKey: 'test' },
-      }),
-      {
-        marshallOptions: { removeUndefinedValues: true },
-      }
-    );
+    this.doc = DynamoDBDocumentClient.from(new DynamoDBClient(config), {
+      marshallOptions: { removeUndefinedValues: true },
+    });
   }
 
   private async get<T>(pk: string, sk: string): Promise<T | null> {
@@ -90,6 +84,23 @@ export class DynamoStore implements Store {
   }
 
   async putSession(session: Session, day: string, rawTtlEpochSeconds: number): Promise<boolean> {
+    await this.doc.send(
+      new PutCommand({
+        TableName: this.table,
+        Item: {
+          pk: `SESSION#${session.id}`,
+          sk: 'RAW',
+          utterances: session.utterances,
+          ttl: rawTtlEpochSeconds,
+        },
+      })
+    );
+    await this.doc.send(
+      new PutCommand({
+        TableName: this.table,
+        Item: { pk: `DAY#${day}`, sk: `SESSION#${session.id}`, id: session.id },
+      })
+    );
     try {
       await this.doc.send(
         new PutCommand({
@@ -110,23 +121,6 @@ export class DynamoStore implements Store {
       if ((err as { name?: string }).name === 'ConditionalCheckFailedException') return false;
       throw err;
     }
-    await this.doc.send(
-      new PutCommand({
-        TableName: this.table,
-        Item: {
-          pk: `SESSION#${session.id}`,
-          sk: 'RAW',
-          utterances: session.utterances,
-          ttl: rawTtlEpochSeconds,
-        },
-      })
-    );
-    await this.doc.send(
-      new PutCommand({
-        TableName: this.table,
-        Item: { pk: `DAY#${day}`, sk: `SESSION#${session.id}`, id: session.id },
-      })
-    );
     return true;
   }
 
@@ -150,15 +144,21 @@ export class DynamoStore implements Store {
   }
 
   async setAnalysis(id: string, analysis: Analysis | null, state: SessionState) {
-    await this.doc.send(
-      new UpdateCommand({
-        TableName: this.table,
-        Key: { pk: `SESSION#${id}`, sk: 'META' },
-        UpdateExpression: 'SET #s = :s',
-        ExpressionAttributeNames: { '#s': 'state' },
-        ExpressionAttributeValues: { ':s': state },
-      })
-    );
+    try {
+      await this.doc.send(
+        new UpdateCommand({
+          TableName: this.table,
+          Key: { pk: `SESSION#${id}`, sk: 'META' },
+          UpdateExpression: 'SET #s = :s',
+          ConditionExpression: 'attribute_exists(pk)',
+          ExpressionAttributeNames: { '#s': 'state' },
+          ExpressionAttributeValues: { ':s': state },
+        })
+      );
+    } catch (err) {
+      if ((err as { name?: string }).name === 'ConditionalCheckFailedException') return;
+      throw err;
+    }
     if (analysis)
       await this.doc.send(
         new PutCommand({
@@ -178,7 +178,6 @@ export class DynamoStore implements Store {
 
   async listPending(): Promise<string[]> {
     // Small table: a scan of META items in a non-analyzed state is cheap at this size.
-    const { ScanCommand } = await import('@aws-sdk/lib-dynamodb');
     const out = await this.doc.send(
       new ScanCommand({
         TableName: this.table,
@@ -253,7 +252,6 @@ export class DynamoStore implements Store {
   }
 
   private async listLogs(prefix: string): Promise<string[]> {
-    const { ScanCommand } = await import('@aws-sdk/lib-dynamodb');
     const out = await this.doc.send(
       new ScanCommand({
         TableName: this.table,
