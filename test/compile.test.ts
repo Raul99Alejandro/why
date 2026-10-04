@@ -22,6 +22,18 @@ describe('compile', () => {
     expect(day!.decisions[0]!.commits).toEqual(['aaa1111']);
     expect(await store.getDay('2026-10-03')).toEqual(day);
   });
+  it('asks for a short summary that uses the glossary names', async () => {
+    const store = new MemoryStore();
+    await store.putSession({ id: 's1', startedAt: '2026-10-03T18:00:00.000Z', endedAt: '2026-10-03T18:20:00.000Z', utterances: [{ speaker: 'U', text: 'x' }] }, '2026-10-03', 9e9);
+    await store.setAnalysis('s1', { topic: 'Voices', summary: 'Moved to Polly.', decisions: [], todos: [], openQuestions: [] }, 'analyzed');
+    const fetchFn = (async () => new Response('[]', { status: 200 })) as typeof fetch;
+    const seen: unknown[] = [];
+    const converse: ConverseFn = async input => { seen.push(input); return tool('save_day_summary', { summary: 'ok' }); };
+    await compileDay({ day: '2026-10-03', store, converse, repos: ['o/r'], timeZone: 'America/Mexico_City', now: new Date(), fetchFn });
+    const sent = JSON.stringify(seen[0]);
+    expect(sent).toContain('25 words');
+    expect(sent).toContain('Counterpart');
+  });
   it('returns null and saves nothing for a day without analyzed sessions', async () => {
     const store = new MemoryStore();
     expect(await compileDay({ day: '2026-10-03', store, converse: scripted(), repos: [], timeZone: 'America/Mexico_City', now: new Date() })).toBeNull();

@@ -21,7 +21,7 @@ export async function matchCommits(decisions: DayDecision[], commits: CommitRef[
   if (decisions.length === 0 || commits.length === 0) return decisions;
   const known = new Set(commits.map(c => c.sha));
   const user = [
-    'Decisions:', ...decisions.map((d, i) => `${i}. ${d.what} � ${d.why}`),
+    'Decisions:', ...decisions.map((d, i) => `${i}. ${d.what} - ${d.why}`),
     'Commits:', ...commits.map(c => `${c.sha} ${c.message}`),
     'Link a commit to a decision only when the commit clearly carries out that decision. Most commits match nothing.'
   ].join('\n');
