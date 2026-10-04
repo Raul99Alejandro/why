@@ -3,6 +3,7 @@ import type { Analysis, Session } from './domain/types.js';
 import { forcedTool, type ConverseFn } from './nova.js';
 import type { Store } from './store/store.js';
 import { log } from './log.js';
+import { neutralizeTags } from './untrusted.js';
 
 const TOOL = 'save_session_analysis';
 const SYSTEM = [
@@ -26,7 +27,7 @@ export function transcriptChunks(session: Session, maxChars = 12_000): string[] 
 }
 
 async function analyzeText(text: string, session: Session, converse: ConverseFn): Promise<Analysis | null> {
-  const user = `Session started at ${session.startedAt}.\n<transcript>\n${text}\n</transcript>`;
+  const user = `Session started at ${session.startedAt}.\n<transcript>\n${neutralizeTags(text)}\n</transcript>`;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const parsed = analysisSchema.safeParse(await forcedTool(converse, {
