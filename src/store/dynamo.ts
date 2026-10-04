@@ -202,6 +202,15 @@ export class DynamoStore implements Store {
     return (await this.get<{ log: DayLog }>(`DAY#${date}`, 'LOG'))?.log ?? null;
   }
 
+  async deleteDay(date: string) {
+    await this.doc.send(
+      new DeleteCommand({
+        TableName: this.table,
+        Key: { pk: `DAY#${date}`, sk: 'LOG' },
+      })
+    );
+  }
+
   async listDays() {
     return this.listLogs('DAY#');
   }

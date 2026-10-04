@@ -56,6 +56,10 @@ export class MemoryStore implements Store {
     return d ? structuredClone(d) : null;
   }
 
+  async deleteDay(date: string) {
+    this.days.delete(date);
+  }
+
   async listDays() {
     return [...this.days.keys()].sort().reverse();
   }

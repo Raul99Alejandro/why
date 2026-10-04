@@ -75,6 +75,16 @@ export function storeContract(name: string, make: () => Promise<Store>): void {
       expect(await s.listPublished()).toEqual([]);
     });
 
+    it('deletes a day log', async () => {
+      const s = await make();
+      await s.putDay(day('2026-10-03'));
+      await s.putDay(day('2026-10-04'));
+      await s.deleteDay('2026-10-03');
+      expect(await s.getDay('2026-10-03')).toBeNull();
+      expect(await s.listDays()).toEqual(['2026-10-04']);
+      await s.deleteDay('2026-10-03');
+    });
+
     it('forgets a session completely', async () => {
       const s = await make();
       await s.putSession(session('a'), '2026-10-03', 9_999_999_999);

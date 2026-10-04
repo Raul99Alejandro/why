@@ -18,6 +18,7 @@ export interface Store {
   listPending(): Promise<string[]>; // ids in state captured or pending_analysis
   putDay(log: DayLog): Promise<void>;
   getDay(date: string): Promise<DayLog | null>;
+  deleteDay(date: string): Promise<void>;
   listDays(): Promise<string[]>; // newest first
   putPublished(day: PublishedDay): Promise<void>;
   getPublished(date: string): Promise<PublishedDay | null>;
