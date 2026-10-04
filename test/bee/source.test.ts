@@ -41,13 +41,22 @@ describe('sources', () => {
     const calls: string[][] = [];
     const src = new CliBeeSource(async args => { calls.push(args); return JSON.stringify(fixture('changed.json')); });
     await src.changedSince(null);
+    await src.changedSince('');
     await src.changedSince('c1');
-    expect(calls).toEqual([['changed', '--json'], ['changed', '--cursor', 'c1', '--json']]);
+    expect(calls).toEqual([['changed', '--json'], ['changed', '--json'], ['changed', '--cursor', 'c1', '--json']]);
   });
   it('CLI source rejects unsafe ids and cursors', async () => {
     const src = new CliBeeSource(async () => '{}');
     await expect(src.conversation('1 & calc')).rejects.toThrow(/Invalid/);
     await expect(src.changedSince('a b')).rejects.toThrow(/Invalid/);
+    await expect(src.conversation('-x')).rejects.toThrow(/Invalid/);
+    await expect(src.changedSince('-x')).rejects.toThrow(/Invalid/);
+  });
+  it('drops an unparseable utterance time and rejects a bad start_time', () => {
+    const inner = fixture('conversation.json').conversation;
+    const bad = { ...inner, transcriptions: [{ utterances: [{ speaker: 's', text: 'hi', spoken_at: 'garbage' }] }] };
+    expect(parseConversation(bad).utterances).toEqual([{ speaker: 's', text: 'hi' }]);
+    expect(() => parseConversation({ ...inner, start_time: 'garbage' })).toThrow(/invalid start_time/);
   });
   it('HTTP source sends the bearer token and never logs it', async () => {
     let auth = '';
@@ -61,5 +70,13 @@ describe('sources', () => {
   it('HTTP source reports an expired token clearly', async () => {
     const src = new HttpBeeSource('https://bee.example', async () => 'tok', async () => new Response('', { status: 401 }));
     await expect(src.conversation('1001')).rejects.toThrow(/Bee token rejected/);
+  });
+  it('HTTP errors never contain the token', async () => {
+    for (const status of [401, 500]) {
+      const src = new HttpBeeSource('https://bee.example', async () => 'secret-tok', async () => new Response('', { status }));
+      const err = await src.conversation('1001').catch(e => e as Error);
+      expect((err as Error).message).not.toContain('secret-tok');
+      expect((err as Error).message).toMatch(status === 401 ? /Bee token rejected/ : /Bee API 500/);
+    }
   });
 });

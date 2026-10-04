@@ -11,8 +11,12 @@ export interface BeeSource {
 
 type Rec = Record<string, unknown>;
 
-const iso = (v: unknown): string | null =>
-  v === null || v === undefined || v === '' ? null : new Date(typeof v === 'number' ? v : String(v)).toISOString();
+/** ISO string, or null when the value is missing or not a valid timestamp. */
+const iso = (v: unknown): string | null => {
+  if (v === null || v === undefined || v === '') return null;
+  const d = new Date(typeof v === 'number' ? v : String(v));
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+};
 
 /** Utterances live under transcriptions[].utterances (docs/bee-api.md); a flat `utterances` array is accepted too. */
 function collectUtterances(c: Rec): Rec[] {
@@ -26,7 +30,7 @@ function collectUtterances(c: Rec): Rec[] {
 export function parseConversation(json: unknown): BeeConversation {
   const c = ((json as { conversation?: unknown }).conversation ?? json) as Rec;
   const startedAt = iso(c.start_time);
-  if (!startedAt) throw new Error('Bee conversation without start_time');
+  if (!startedAt) throw new Error('Bee conversation with invalid start_time');
   return {
     id: String(c.id),
     startedAt,
@@ -51,15 +55,15 @@ export function parseChanged(json: unknown): { ids: string[]; nextCursor: string
 }
 
 const exec = promisify(execFile);
-const SAFE_ID = /^[\w-]+$/;
-const SAFE_CURSOR = /^[\w.:=+-]+$/;
+const SAFE_ID = /^\w[\w-]*$/;
+const SAFE_CURSOR = /^[\w.:=+][\w.:=+-]*$/;
 
 export class CliBeeSource implements BeeSource {
   constructor(private run: (args: string[]) => Promise<string> =
     // bee is a .cmd shim on Windows, which needs a shell; every arg is validated below.
     async args => (await exec('bee', args, { maxBuffer: 32 * 1024 * 1024, shell: process.platform === 'win32' })).stdout) {}
   async changedSince(cursor: string | null) {
-    if (cursor !== null && !SAFE_CURSOR.test(cursor)) throw new Error('Invalid Bee cursor');
+    if (cursor && !SAFE_CURSOR.test(cursor)) throw new Error('Invalid Bee cursor');
     return parseChanged(JSON.parse(await this.run(cursor ? ['changed', '--cursor', cursor, '--json'] : ['changed', '--json'])));
   }
   async conversation(id: string) {
