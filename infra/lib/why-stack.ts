@@ -224,20 +224,26 @@ export class WhyStack extends Stack {
       });
     }
 
+    // Own log groups (1 month) for the CDK helper functions too. Their functions reference the group, so
+    // CloudFormation deletes the group only after the function on teardown or rollback. The S3
+    // auto-delete provider has no log group option; it keeps Lambda's default group, which it can create
+    // itself (AWSLambdaBasicExecutionRole).
+    const helperLogs = (name: string) => new logs.LogGroup(this, name, { retention: logs.RetentionDays.ONE_MONTH, removalPolicy: RemovalPolicy.DESTROY });
     const siteUrl = `https://${distribution.distributionDomainName}/`;
     const setCallback = new cr.AwsCustomResource(this, 'SetCallback', {
       onUpdate: {
-        service: 'CognitoIdentityProvider', action: 'UpdateUserPoolClient',
+        service: '@aws-sdk/client-cognito-identity-provider', action: 'UpdateUserPoolClient',
         parameters: { UserPoolId: userPool.userPoolId, ClientId: client.userPoolClientId, ...clientSettings, CallbackURLs: [siteUrl], LogoutURLs: [siteUrl] },
         physicalResourceId: cr.PhysicalResourceId.of(`${id}-callback-${clientHash}`)
       },
       policy: cr.AwsCustomResourcePolicy.fromSdkCalls({ resources: [userPool.userPoolArn] }),
-      installLatestAwsSdk: false
+      installLatestAwsSdk: false,
+      logGroup: helperLogs('SetCallbackLogs')
     });
     setCallback.node.addDependency(cfnClient);
 
     new s3deploy.BucketDeployment(this, 'Deploy', {
-      destinationBucket: bucket, distribution, distributionPaths: ['/*'],
+      destinationBucket: bucket, distribution, distributionPaths: ['/*'], logGroup: helperLogs('DeployLogs'),
       sources: [
         s3deploy.Source.asset(props.webDir ?? root('dist-web')),
         s3deploy.Source.jsonData('config.json', { domain: `${domain.domainName}.auth.${this.region}.amazoncognito.com`, clientId: client.userPoolClientId, redirect: siteUrl })

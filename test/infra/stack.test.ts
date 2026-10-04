@@ -81,7 +81,10 @@ describe('Why stack', () => {
     const parts = crs[0]!.Properties.Update['Fn::Join'][1] as unknown[];
     const call = JSON.parse(parts.map(x => typeof x === 'string' ? x
       : JSON.stringify(x) === JSON.stringify({ 'Fn::GetAtt': [distribution, 'DomainName'] }) ? 'DIST' : 'TOKEN').join(''));
+    expect(call.service).toBe('@aws-sdk/client-cognito-identity-provider');
     expect(call.action).toBe('UpdateUserPoolClient');
+    const cbPolicy = Object.entries(t.findResources('AWS::IAM::Policy')).find(([id]) => id.startsWith('SetCallback'))![1];
+    expect(cbPolicy.Properties.PolicyDocument.Statement).toEqual([{ Action: 'cognito-idp:UpdateUserPoolClient', Effect: 'Allow', Resource: { 'Fn::GetAtt': [Object.keys(t.findResources('AWS::Cognito::UserPool'))[0], 'Arn'] } }]);
     expect(call.parameters.CallbackURLs).toEqual(['https://DIST/']);
     expect(call.parameters.LogoutURLs).toEqual(['https://DIST/']);
     // The physical id carries a hash of the client settings, so a client change re-runs the call.
@@ -114,6 +117,21 @@ describe('Why stack', () => {
     const behaviors = dist.Properties.DistributionConfig.CacheBehaviors as { PathPattern: string; CachePolicyId: string }[];
     expect(behaviors.map(b => b.PathPattern)).toEqual(['/api/demo/*', '/api/*']);
     for (const b of behaviors) expect(b.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
+  });
+  it('lets every function, CDK helpers included, write its logs, with 1-month retention where we own the group', () => {
+    const roles = t.findResources('AWS::IAM::Role');
+    for (const [id, fn] of Object.entries(t.findResources('AWS::Lambda::Function'))) {
+      const role = roles[fn.Properties.Role['Fn::GetAtt'][0]];
+      expect(JSON.stringify(role?.Properties.ManagedPolicyArns), id).toContain('AWSLambdaBasicExecutionRole');
+      const group = fn.Properties.LoggingConfig?.LogGroup?.Ref;
+      if (group) {
+        expect(t.findResources('AWS::Logs::LogGroup')[group]?.Properties.RetentionInDays, id).toBe(30);
+        // The function depends on its group, so on delete or rollback the group outlives the function.
+      }
+    }
+    const withGroup = Object.entries(t.findResources('AWS::Lambda::Function')).filter(([, f]) => f.Properties.LoggingConfig).map(([id]) => id);
+    expect(withGroup.some(id => id.startsWith('AWS679f53fac'))).toBe(true);
+    expect(withGroup.some(id => id.startsWith('CustomCDKBucketDeployment'))).toBe(true);
   });
   it('gives the demo function no reserved concurrency', () => {
     for (const fn of Object.values(t.findResources('AWS::Lambda::Function'))) expect(fn.Properties.ReservedConcurrentExecutions).toBeUndefined();
