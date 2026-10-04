@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
+import { CfnOutput, Duration, Names, RemovalPolicy, Stack, Token, type StackProps } from 'aws-cdk-lib';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
@@ -18,7 +19,7 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as cr from 'aws-cdk-lib/custom-resources';
-import { NagSuppressions } from 'cdk-nag';
+import { NagSuppressions, type NagPackSuppressionAppliesTo } from 'cdk-nag';
 import type { Construct } from 'constructs';
 
 export interface WhyStackProps extends StackProps {
@@ -56,6 +57,17 @@ export class WhyStack extends Stack {
       `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/us.amazon.nova-2-lite-v1:0`,
       'arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0'
     ];
+    // cdk-nag IAM5 is suppressed per role and per finding (appliesTo), so any new wildcard fails synth.
+    const allow = (target: lambda.IFunction | iam.IRole, appliesTo: NagPackSuppressionAppliesTo[], reason: string) => {
+      const role = 'role' in target ? target.role : target;
+      if (role) NagSuppressions.addResourceSuppressions(role, [{ id: 'AwsSolutions-IAM5', appliesTo, reason }], true);
+    };
+    const kmsGrant = (f: lambda.IFunction) => allow(f, ['Action::kms:GenerateDataKey*', 'Action::kms:ReEncrypt*'],
+      'CDK table grant on our own customer-managed key only (the Resource is the key ARN).');
+    const bedrockAny = (f: lambda.IFunction) => allow(f, ['Resource::arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0'],
+      'The us. cross-region inference profile routes Nova 2 Lite to several US regions, so the foundation-model ARN needs a region wildcard; the model id is fixed.');
+    const pollyAny = (f: lambda.IFunction) => allow(f, ['Resource::*'],
+      'polly:SynthesizeSpeech has no resource to scope to (only lexicons, which we do not use); this is the only Resource * statement in the role.');
     const bedrock = new iam.PolicyStatement({ actions: ['bedrock:InvokeModel'], resources: novaArns });
     const polly = new iam.PolicyStatement({ actions: ['polly:SynthesizeSpeech'], resources: ['*'] });
 
@@ -81,15 +93,32 @@ export class WhyStack extends Stack {
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY, featurePlan: cognito.FeaturePlan.LITE,
       removalPolicy: RemovalPolicy.DESTROY
     });
-    const domain = userPool.addDomain('Domain', { cognitoDomain: { domainPrefix: `why-${this.account}` } });
-    const authFlows = { userSrp: true };
+    // Cognito domain prefixes are global: a short deterministic hash instead of the account id.
+    const domainSeed = Token.isUnresolved(this.account) ? Names.uniqueId(this) : `${this.account}/${this.stackName}`;
+    const domainPrefix = `why-${createHash('sha256').update(domainSeed).digest('hex').slice(0, 8)}`;
+    const domain = userPool.addDomain('Domain', { cognitoDomain: { domainPrefix } });
+    // One source for the client settings: the CloudFormation client and the SetCallback request
+    // below are both built from it, so they cannot drift. UpdateUserPoolClient resets every field
+    // it is not given, which is why SetCallback resends all of them.
+    const clientSettings = {
+      ClientName: 'why-web', AllowedOAuthFlows: ['code'], AllowedOAuthScopes: ['openid', 'email'], AllowedOAuthFlowsUserPoolClient: true,
+      SupportedIdentityProviders: ['COGNITO'], ExplicitAuthFlows: ['ALLOW_USER_SRP_AUTH', 'ALLOW_REFRESH_TOKEN_AUTH'],
+      PreventUserExistenceErrors: 'ENABLED', EnableTokenRevocation: true
+    };
+    const placeholder = ['https://localhost/'];
     // The real callback (the distribution's address) is set by SetCallback below: putting it here
     // would make a cycle (client -> distribution -> function URL -> function env CLIENT_ID -> client).
-    const client = userPool.addClient('Web', {
-      generateSecret: false, authFlows, preventUserExistenceErrors: true,
-      oAuth: { flows: { authorizationCodeGrant: true }, scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL], callbackUrls: ['https://localhost/'], logoutUrls: ['https://localhost/'] },
-      supportedIdentityProviders: [cognito.UserPoolClientIdentityProvider.COGNITO]
+    const cfnClient = new cognito.CfnUserPoolClient(this, 'WebClient', {
+      userPoolId: userPool.userPoolId, generateSecret: false, clientName: clientSettings.ClientName,
+      allowedOAuthFlows: clientSettings.AllowedOAuthFlows, allowedOAuthScopes: clientSettings.AllowedOAuthScopes,
+      allowedOAuthFlowsUserPoolClient: clientSettings.AllowedOAuthFlowsUserPoolClient, supportedIdentityProviders: clientSettings.SupportedIdentityProviders,
+      explicitAuthFlows: clientSettings.ExplicitAuthFlows, preventUserExistenceErrors: clientSettings.PreventUserExistenceErrors,
+      enableTokenRevocation: clientSettings.EnableTokenRevocation, callbackUrLs: placeholder, logoutUrLs: placeholder
     });
+    // Changes whenever the client's settings change, so SetCallback runs again right after
+    // CloudFormation updates the client (which puts the placeholder callback back).
+    const clientHash = createHash('sha256').update(JSON.stringify({ ...clientSettings, GenerateSecret: false, placeholder })).digest('hex').slice(0, 16);
+    const client = { userPoolClientId: cfnClient.ref };
     new cognito.CfnUserPoolUser(this, 'Owner', {
       userPoolId: userPool.userPoolId, username: ownerEmail, desiredDeliveryMediums: ['EMAIL'],
       userAttributes: [{ name: 'email', value: ownerEmail }, { name: 'email_verified', value: 'true' }]
@@ -98,6 +127,7 @@ export class WhyStack extends Stack {
     // Functions.
     const api = fn('Api', 'src/handlers/api.ts', Duration.seconds(30), { REPOS: repos, BEE_MODE: beeMode, USER_POOL_ID: userPool.userPoolId, CLIENT_ID: client.userPoolClientId });
     table.grantReadWriteData(api);
+    kmsGrant(api); bedrockAny(api); pollyAny(api);
     api.addToRolePolicy(bedrock);
     api.addToRolePolicy(polly);
 
@@ -106,9 +136,13 @@ export class WhyStack extends Stack {
       actions: ['dynamodb:GetItem', 'dynamodb:Query'], resources: [table.tableArn],
       conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PUB#*'] } }
     }));
-    demo.addToRolePolicy(new iam.PolicyStatement({ actions: ['kms:Decrypt'], resources: [key.keyArn] }));
+    demo.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['kms:Decrypt'], resources: [key.keyArn],
+      conditions: { StringEquals: { 'kms:ViaService': `dynamodb.${this.region}.amazonaws.com` } }
+    }));
     demo.addToRolePolicy(bedrock);
     demo.addToRolePolicy(polly);
+    bedrockAny(demo); pollyAny(demo);
 
     let alarmFn: lambda.IFunction = api;
     let alarmMetric = api.metricErrors({ period: Duration.hours(1), statistic: 'Sum' });
@@ -120,8 +154,11 @@ export class WhyStack extends Stack {
       secret.grantRead(sync);
       table.grantReadWriteData(sync);
       sync.addToRolePolicy(bedrock);
+      kmsGrant(sync); bedrockAny(sync);
       const schedulerRole = new iam.Role(this, 'SyncSchedulerRole', { assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com') });
       sync.grantInvoke(schedulerRole);
+      allow(schedulerRole, [`Resource::<${this.getLogicalId(sync.node.defaultChild as lambda.CfnFunction)}.Arn>:*`],
+        'CDK grantInvoke also covers the versions and aliases of the sync function (ARN:*); nothing else.');
       new scheduler.CfnSchedule(this, 'SyncSchedule', {
         scheduleExpression: 'rate(30 minutes)', flexibleTimeWindow: { mode: 'OFF' },
         target: { arn: sync.functionArn, roleArn: schedulerRole.roleArn, retryPolicy: { maximumRetryAttempts: 0 } }
@@ -190,18 +227,13 @@ export class WhyStack extends Stack {
     const setCallback = new cr.AwsCustomResource(this, 'SetCallback', {
       onUpdate: {
         service: 'CognitoIdentityProvider', action: 'UpdateUserPoolClient',
-        parameters: {
-          UserPoolId: userPool.userPoolId, ClientId: client.userPoolClientId,
-          CallbackURLs: [siteUrl], LogoutURLs: [siteUrl], AllowedOAuthFlows: ['code'], AllowedOAuthScopes: ['openid', 'email'],
-          AllowedOAuthFlowsUserPoolClient: true, SupportedIdentityProviders: ['COGNITO'],
-          ExplicitAuthFlows: ['ALLOW_USER_SRP_AUTH', 'ALLOW_REFRESH_TOKEN_AUTH'], PreventUserExistenceErrors: 'ENABLED', EnableTokenRevocation: true
-        },
-        physicalResourceId: cr.PhysicalResourceId.of(`${id}-callback`)
+        parameters: { UserPoolId: userPool.userPoolId, ClientId: client.userPoolClientId, ...clientSettings, CallbackURLs: [siteUrl], LogoutURLs: [siteUrl] },
+        physicalResourceId: cr.PhysicalResourceId.of(`${id}-callback-${clientHash}`)
       },
       policy: cr.AwsCustomResourcePolicy.fromSdkCalls({ resources: [userPool.userPoolArn] }),
       installLatestAwsSdk: false
     });
-    setCallback.node.addDependency(client);
+    setCallback.node.addDependency(cfnClient);
 
     new s3deploy.BucketDeployment(this, 'Deploy', {
       destinationBucket: bucket, distribution, distributionPaths: ['/*'],
@@ -218,15 +250,22 @@ export class WhyStack extends Stack {
     new CfnOutput(this, 'TableName', { value: table.tableName });
     if (secret) new CfnOutput(this, 'BeeSecretArn', { value: secret.secretArn });
 
+    const deployHandler = 'Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C';
+    NagSuppressions.addResourceSuppressionsByPath(this, `/${this.stackName}/${deployHandler}/ServiceRole/DefaultPolicy/Resource`, [{
+      id: 'AwsSolutions-IAM5', reason: 'CDK BucketDeployment handler: copies the web build from the CDK assets bucket into our site bucket and invalidates our distribution (CloudFront invalidation has no resource-level scoping).',
+      appliesTo: ['Action::s3:Abort*', 'Action::s3:DeleteObject*', 'Action::s3:GetBucket*', 'Action::s3:GetObject*', 'Action::s3:List*', 'Resource::*',
+        `Resource::<${this.getLogicalId(bucket.node.defaultChild as s3.CfnBucket)}.Arn>/*`, { regex: '/^Resource::arn:<AWS::Partition>:s3:::cdk-[a-z0-9]+-assets-.+\/\*$/' }]
+    }]);
+    NagSuppressions.addResourceSuppressionsByPath(this, `/${this.stackName}/${deployHandler}/Resource`, [{
+      id: 'AwsSolutions-L1', reason: 'The BucketDeployment handler is owned by the CDK, which picks its Python runtime; our functions use Node.js 24.'
+    }]);
     this.suppress();
   }
 
   /** cdk-nag findings accepted on purpose, each with its reason. */
   private suppress() {
     NagSuppressions.addStackSuppressions(this, [
-      { id: 'AwsSolutions-IAM4', reason: 'Lambda functions (ours and the CDK custom-resource handlers) use the AWS managed AWSLambdaBasicExecutionRole only for writing their own CloudWatch logs.' },
-      { id: 'AwsSolutions-IAM5', reason: 'Wildcards are scoped: KMS GenerateDataKey*/ReEncrypt* and DynamoDB index/* come from CDK grants on our own key and table; Bedrock foundation-model ARN must allow any region for the cross-region Nova inference profile; Polly SynthesizeSpeech has no resource to scope to; the scheduler role lambda:InvokeFunction grant covers the versions of the sync function (:*); the CDK BucketDeployment handler needs s3:*Object* on our bucket and CloudFront invalidation.' },
-      { id: 'AwsSolutions-L1', reason: 'Our functions use Node.js 24 (latest); the CDK-owned custom-resource handlers pick their own runtime.' },
+      { id: 'AwsSolutions-IAM4', appliesTo: ['Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'], reason: 'Lambda functions (ours and the CDK custom-resource handlers) use the AWS managed AWSLambdaBasicExecutionRole only for writing their own CloudWatch logs.' },
       { id: 'AwsSolutions-SMG4', reason: 'The Bee token is a personal token pasted by the owner; Bee offers no rotation API.' },
       { id: 'AwsSolutions-COG8', reason: 'Cognito threat protection needs the Plus feature plan, which is out of the budget; this single-owner pool has self sign-up disabled and TOTP MFA required on the Lite plan.' },
       { id: 'AwsSolutions-S1', reason: 'Server access logging is off for cost; the bucket only holds the public static web build.' },

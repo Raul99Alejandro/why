@@ -40,7 +40,14 @@ describe('Why stack', () => {
   it('limits Bedrock to Nova 2 Lite', () => {
     const json = JSON.stringify(t.findResources('AWS::IAM::Policy'));
     expect(json).toContain('inference-profile/us.amazon.nova-2-lite-v1:0');
-    expect(json).not.toMatch(/"bedrock:\*"|"Resource":"\*".{0,80}bedrock:InvokeModel/);
+    type Statement = { Action: string | string[]; Resource: unknown };
+    const statements = Object.values(t.findResources('AWS::IAM::Policy')).flatMap(p => p.Properties.PolicyDocument.Statement as Statement[]);
+    const bedrock = statements.filter(st => [st.Action].flat().some(a => a.startsWith('bedrock:')));
+    expect(bedrock.length).toBeGreaterThan(0);
+    for (const st of bedrock) {
+      expect([st.Action].flat()).toEqual(['bedrock:InvokeModel']);
+      expect([st.Resource].flat()).not.toContain('*');
+    }
   });
   it('runs the sync every 30 minutes and alarms on failures', () => {
     t.hasResourceProperties('AWS::Scheduler::Schedule', { ScheduleExpression: 'rate(30 minutes)' });
@@ -54,6 +61,40 @@ describe('Why stack', () => {
     const perms = Object.values(t.findResources('AWS::Lambda::Permission', { Properties: { Action: 'lambda:InvokeFunctionUrl', Principal: 'cloudfront.amazonaws.com' } }));
     expect(perms).toHaveLength(2);
     for (const p of perms) expect(JSON.stringify(p.Properties.SourceArn)).toContain(distribution);
+  });
+  it('also lets this distribution invoke both functions, only through their URLs', () => {
+    const distribution = Object.keys(t.findResources('AWS::CloudFront::Distribution'))[0]!;
+    const perms = Object.values(t.findResources('AWS::Lambda::Permission', { Properties: { Action: 'lambda:InvokeFunction', Principal: 'cloudfront.amazonaws.com' } }));
+    expect(perms).toHaveLength(2);
+    const fns = Object.keys(t.findResources('AWS::Lambda::Function')).filter(id => /^(Api|Demo)/.test(id));
+    for (const p of perms) {
+      expect(p.Properties.InvokedViaFunctionUrl).toBe(true);
+      expect(JSON.stringify(p.Properties.SourceArn)).toContain(`:distribution/",{"Ref":"${distribution}"}`);
+    }
+    expect(perms.map(p => p.Properties.FunctionName['Fn::GetAtt'][0]).sort()).toEqual(fns.sort());
+  });
+  it('points the Cognito callback at the distribution, after every client change', () => {
+    const distribution = Object.keys(t.findResources('AWS::CloudFront::Distribution'))[0]!;
+    const crs = Object.values(t.findResources('Custom::AWS'));
+    expect(crs).toHaveLength(1);
+    // Rebuild the SDK call from its Fn::Join, standing in DIST for the distribution's domain.
+    const parts = crs[0]!.Properties.Update['Fn::Join'][1] as unknown[];
+    const call = JSON.parse(parts.map(x => typeof x === 'string' ? x
+      : JSON.stringify(x) === JSON.stringify({ 'Fn::GetAtt': [distribution, 'DomainName'] }) ? 'DIST' : 'TOKEN').join(''));
+    expect(call.action).toBe('UpdateUserPoolClient');
+    expect(call.parameters.CallbackURLs).toEqual(['https://DIST/']);
+    expect(call.parameters.LogoutURLs).toEqual(['https://DIST/']);
+    // The physical id carries a hash of the client settings, so a client change re-runs the call.
+    expect(call.physicalResourceId.id).toMatch(/^Test-callback-[0-9a-f]{16}$/);
+    const client = Object.values(t.findResources('AWS::Cognito::UserPoolClient'))[0]!.Properties;
+    for (const k of ['ClientName', 'AllowedOAuthFlows', 'AllowedOAuthScopes', 'AllowedOAuthFlowsUserPoolClient', 'SupportedIdentityProviders', 'ExplicitAuthFlows', 'PreventUserExistenceErrors', 'EnableTokenRevocation'])
+      expect(call.parameters[k]).toEqual(client[k]);
+  });
+  it('lets the demo decrypt only through DynamoDB, and keeps the account id out of the Cognito domain', () => {
+    const demo = JSON.stringify(Object.entries(t.findResources('AWS::IAM::Policy')).find(([id]) => /Demo/.test(id))![1]);
+    expect(demo).toContain('"kms:ViaService":"dynamodb.us-east-1.amazonaws.com"');
+    t.hasResourceProperties('AWS::Cognito::UserPoolDomain', { Domain: Match.stringLikeRegexp('^why-[0-9a-f]{8}$') });
+    expect(JSON.stringify(t.findResources('AWS::Cognito::UserPoolDomain'))).not.toContain('111111111111');
   });
   it('forwards only the token, body hash and content type to the API origins, never Host', () => {
     t.hasResourceProperties('AWS::CloudFront::OriginRequestPolicy', { OriginRequestPolicyConfig: Match.objectLike({
