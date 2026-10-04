@@ -91,7 +91,7 @@ export function createRouter(deps: { store: Store; converse: ConverseFn; speak: 
     return NOT_FOUND;
   };
 
-  return async req => {
+  return async (req: ApiRequest): Promise<ApiResponse> => {
     try { return await dispatch(req); } catch (err) {
       log({ level: 'error', msg: 'api_error', route: req.path.split('?')[0], error: err instanceof Error ? err.name : 'unknown' });
       return json(500, { error: 'internal' });

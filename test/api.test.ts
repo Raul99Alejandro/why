@@ -86,7 +86,7 @@ describe('api extras', () => {
 describe('api hardening', () => {
   const auth = { authorization: 'Bearer good' };
   const SECRET = 'zebra-private-rationale-7731';
-  const secretDay: DayLog = { ...day, decisions: [{ what: SECRET, why: SECRET, quote: SECRET, at: 'a', sessionId: 's1', commits: [] }] };
+  const secretDay: DayLog = { ...day, decisions: [{ what: SECRET, why: SECRET, quote: SECRET, quoteOriginal: SECRET, at: 'a', sessionId: 's1', commits: [] }] };
   const mk = async (over: Record<string, unknown> = {}) => {
     const store = new MemoryStore();
     await store.putDay(secretDay);
