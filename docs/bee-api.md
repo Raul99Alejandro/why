@@ -16,7 +16,7 @@ All commands print markdown by default; add `--json` for raw JSON.
 | Daily summaries | `bee daily list --limit N --json` |
 | Auth check | `bee status` (prints a truncated token fragment: do not log its output) |
 
-Sync design: poll `bee changed --json` with the saved `meta.next_cursor`; for each conversation whose `state` is no longer `CAPTURING` (and whose `end_time` is set), fetch it with `conversations get` and process it once.
+Sync design: poll `bee changed --json` with the saved `meta.next_cursor`; fetch each changed conversation with `conversations get`, split it into sessions (see Sessions) and process each finished session once.
 
 ## JSON shapes
 
@@ -101,6 +101,12 @@ Field names and types as observed; values are made up. Utterance text is never r
 `bee daily list --json`: `{ "daily_summaries": [], "next_cursor": null, "timezone": "..." }`.
 
 Caveat: at investigation time the account had only one conversation and it was still `CAPTURING`, so the shape of a finished conversation (populated `end_time`, `summary`, `short_summary`) is not yet observed. Re-check once the first session has ended.
+
+## Sessions
+
+Observed on 2026-10-04: Bee does not start a new conversation per recording. One conversation stayed `CAPTURING` for 20+ hours and every new recording was appended to it (11 utterances spread over two days). Waiting for a conversation to stop capturing therefore never yields anything.
+
+Split rule (`splitSessions` in `src/collect.ts`): sort the utterances that have a timestamp; a gap greater than 20 minutes between consecutive utterances starts a new session. Session id is `<conversation id>-<epoch seconds of its first utterance>`, so re-collecting a grown conversation keeps earlier sessions stable. A session is finished when the conversation is no longer capturing, or its last utterance is more than 30 minutes old. Unfinished sessions are skipped and hold the cursor back. Untimed utterances join the session of the preceding timed one; a conversation with no timestamps at all is one session.
 
 ## HTTP API and auth
 
