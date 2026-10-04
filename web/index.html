@@ -1,12 +1,58 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Why — your decisions, from Bee</title></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Why — your decisions, from Bee</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23151b24'/%3E%3Ctext x='16' y='23' font-family='Georgia,serif' font-size='20' font-weight='700' text-anchor='middle' fill='%23e8b45e'%3E%3F%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap">
+</head>
 <body>
-  <header class="top"><strong class="brand">Why</strong><span class="tag">Your work decisions, written from what Bee heard</span><span class="demo-label">Judges' demo · real Bee data, reviewed and published by the owner</span><span id="sync" class="sync"></span></header>
-  <div id="strip"></div>
+  <a class="skip" href="#day">Skip to the day</a>
+  <header class="top">
+    <div class="brand-block">
+      <a class="brand" href="./" aria-label="Why, home">Why</a>
+      <p class="tag">What you decided at work, and the reasons, from what Bee heard.</p>
+    </div>
+    <div class="top-right">
+      <p class="demo-badge"><strong>Judges' demo</strong><span>Real Bee data, reviewed and published by the owner</span></p>
+      <span id="sync" class="sync-pill" hidden></span>
+    </div>
+  </header>
+  <div id="days" class="days-wrap"></div>
   <div id="notice" role="alert"></div>
-  <main><div id="day" aria-live="polite"></div><aside><input id="search" type="search" placeholder="Search decisions" aria-label="Search decisions"><div id="results"></div><div id="week"></div></aside></main>
-  <form id="ask-form" class="ask"><div class="ask-row"><button id="mic" type="button" aria-label="Ask by voice">🎙</button><input id="question" placeholder="Ask: what did we decide about…" maxlength="300" aria-label="Question"><button class="go">Ask</button></div><p id="answer" aria-live="polite"></p><div id="citations"></div></form>
+  <main class="layout">
+    <div id="day" class="day" aria-live="polite" tabindex="-1"><p class="loading-line">Loading your decision log…</p></div>
+    <aside class="side" aria-label="Day details">
+      <label class="search">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="search" type="search" placeholder="Search decisions" aria-label="Search decisions" autocomplete="off">
+      </label>
+      <div id="results"></div>
+      <div id="side"></div>
+    </aside>
+  </main>
+  <div class="composer-wrap">
+    <section id="answer-card" class="answer-card" hidden aria-live="polite" aria-label="Answer">
+      <div class="answer-head">
+        <span id="speaking" class="speaking" hidden><span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Speaking<button id="stop" type="button" class="stop">Stop</button></span>
+        <button id="close-answer" type="button" class="close" aria-label="Close answer"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+      </div>
+      <div id="answer"></div>
+    </section>
+    <form id="ask-form" class="composer">
+      <button id="mic" type="button" class="mic" aria-label="Ask by voice" aria-pressed="false">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <input id="question" placeholder="Ask about your decisions…" maxlength="300" aria-label="Ask about your decisions" autocomplete="off" enterkeyhint="send">
+      <button class="send" aria-label="Ask">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </form>
+  </div>
   <script type="module" src="./main.ts"></script>
 </body>
 </html>
