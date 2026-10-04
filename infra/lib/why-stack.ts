@@ -183,11 +183,12 @@ export class WhyStack extends Stack {
     });
     const apiUrl = api.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });
     const demoUrl = demo.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.AWS_IAM });
-    // OAC signs the request and overwrites Authorization, so the JWT travels in x-why-token.
+    // OAC signs the request and overwrites Authorization, so the JWT travels in x-why-token. CloudFront
+    // forwards the viewer's x-amz-content-sha256 to OAC Lambda origins on its own and rejects it in a policy.
     const forward = new cloudfront.OriginRequestPolicy(this, 'ApiForward', {
-      comment: 'Why API: query string, token, body hash and content type only',
+      comment: 'Why API: query string, token and content type only (CloudFront adds x-amz-content-sha256 for OAC itself)',
       queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.all(),
-      headerBehavior: cloudfront.OriginRequestHeaderBehavior.allowList('x-why-token', 'x-amz-content-sha256', 'content-type'),
+      headerBehavior: cloudfront.OriginRequestHeaderBehavior.allowList('x-why-token', 'content-type'),
       cookieBehavior: cloudfront.OriginRequestCookieBehavior.none()
     });
     const headers = new cloudfront.ResponseHeadersPolicy(this, 'SecurityHeaders', {

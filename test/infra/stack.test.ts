@@ -96,11 +96,18 @@ describe('Why stack', () => {
     t.hasResourceProperties('AWS::Cognito::UserPoolDomain', { Domain: Match.stringLikeRegexp('^why-[0-9a-f]{8}$') });
     expect(JSON.stringify(t.findResources('AWS::Cognito::UserPoolDomain'))).not.toContain('111111111111');
   });
-  it('forwards only the token, body hash and content type to the API origins, never Host', () => {
+  it('forwards only the token and content type to the API origins (CloudFront adds the body hash itself), never Host', () => {
     t.hasResourceProperties('AWS::CloudFront::OriginRequestPolicy', { OriginRequestPolicyConfig: Match.objectLike({
-      HeadersConfig: { HeaderBehavior: 'whitelist', Headers: ['x-why-token', 'x-amz-content-sha256', 'content-type'] },
+      HeadersConfig: { HeaderBehavior: 'whitelist', Headers: ['x-why-token', 'content-type'] },
       QueryStringsConfig: { QueryStringBehavior: 'all' }, CookiesConfig: { CookieBehavior: 'none' }
     }) });
+  });
+  it('lists no header CloudFront refuses in a policy (Authorization, Host, X-Amz-*)', () => {
+    const headers = ['AWS::CloudFront::OriginRequestPolicy', 'AWS::CloudFront::CachePolicy', 'AWS::CloudFront::ResponseHeadersPolicy']
+      .flatMap(type => [...JSON.stringify(t.findResources(type)).matchAll(/"Headers?":\[([^\]]*)\]/g)].flatMap(m => JSON.parse(`[${m[1]}]`) as unknown[]))
+      .filter((h): h is string => typeof h === 'string');
+    expect(headers.length).toBeGreaterThan(0);
+    for (const h of headers) expect(h.toLowerCase()).not.toMatch(/^(authorization|host|x-amz-.*)$/);
   });
   it('routes /api/demo/* before /api/*, uncached', () => {
     const dist = Object.values(t.findResources('AWS::CloudFront::Distribution'))[0]!;
