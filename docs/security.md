@@ -56,6 +56,14 @@ Why turns the owner's Bee recordings into a daily decision log. The data is a pe
 - Where: `infra/lib/why-stack.ts` (`demo.addToRolePolicy(...)`, `bedrock`, `polly`, `allow(...)`, `suppress()`).
 - Tests: `test/infra/stack.test.ts` (`lets the demo function read only published keys, and never scan or write`, `lets the demo decrypt only through DynamoDB, and keeps the account id out of the Cognito domain`, `limits Bedrock to Nova 2 Lite`, `has no load balancer, NAT or container`, `runs the sync every 30 minutes and alarms on failures`).
 
+## Unattended sync (owner's PC)
+
+- Risk: the scheduled sync needs AWS credentials on a PC that is not always signed in, and an SSO session (about 8 hours) would make it fail; a long-lived key must not be able to do more than the sync.
+- Control: in `beeMode=cli` the stack creates an IAM user `SyncUser` (output `SyncUserName`) with no console password, no managed policies and no group, and one inline policy: DynamoDB `GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Query` and `Scan` on the Why table ARN only (`Scan` is how the sync lists pending sessions); `kms:Decrypt`, `kms:Encrypt` and `kms:GenerateDataKey` on the table's key only when the call comes through DynamoDB (`kms:ViaService`); Bedrock `InvokeModel` on the two Nova 2 Lite ARNs only. No Secrets Manager, Polly, Cognito or S3 rights. CDK never creates an access key: the owner creates it in the IAM console and stores it only in the `why-sync` profile of `~/.aws/credentials` on the PC (never in the repository, a log or chat). Rotation or revocation: create a new key and update the profile, or delete the key in IAM (the user then cannot do anything).
+- Scheduled task: `scripts/register-sync-task.ps1` registers the Windows task "Why Bee sync" for the current user, every 30 minutes and only while that user is logged on (the Bee CLI token lives in the user's credential store), hidden window; `scripts/unregister-sync-task.ps1` removes it. The task runs `scripts/sync-task.ps1`, which uses the `why-sync` profile and appends one line per run to `%LOCALAPPDATA%\why\sync.log` (a timestamp and the counts, or `error:` plus an exception class name; never conversation text; trimmed to 500 lines).
+- Where: `infra/lib/why-stack.ts` (`SyncUser`), `scripts/sync-task.ps1`, `scripts/register-sync-task.ps1`, `scripts/unregister-sync-task.ps1`.
+- Tests: `test/infra/stack.test.ts` (`creates a SyncUser limited to the table, its key via DynamoDB, and Nova`, and `Why stack in http mode` > `has no SyncUser`).
+
 ## Data minimization
 
 - Risk: keeping more of other people's conversations than the log needs.
@@ -107,7 +115,7 @@ Why turns the owner's Bee recordings into a daily decision log. The data is a pe
 
 - Bee transcribes whoever is near the wearable, including people who did not consent. Mitigation: the owner records work sessions only, raw text expires after 30 days, other people's names are replaced before anything is published, and nothing is ever shown outside the private view without a preview and an approval.
 - Anyone who controls the owner's Cognito login (password plus TOTP device) or the owner's AWS account sees everything. MFA is required, but a stolen device or a compromised account is out of scope.
-- The owner's PC holds the Bee token and runs the sync with the owner's AWS credentials; a compromised PC is a compromised log.
+- The owner's PC holds the Bee token and the `SyncUser` access key (profile `why-sync`); a compromised PC is a compromised log. The key is limited to the sync's own rights and can be revoked in IAM.
 - Redaction is pattern-based and name review is model-based: both can miss an unusual identifier or a nickname. The preview is the final check and is mandatory in the web flow, but a careless approval is still a human error.
 - There is no WAF or geo restriction; the demo limiter is best effort per instance. The worst case is a bounded Bedrock bill and `429` responses for real visitors, not a data leak.
 - The default `cloudfront.net` certificate caps the minimum TLS version at what CloudFront allows for it; Cognito threat protection needs the paid Plus plan. Both are recorded as `cdk-nag` suppressions with reasons.

@@ -168,6 +168,27 @@ export class WhyStack extends Stack {
       alarmShape = { threshold: 1, evaluationPeriods: 6 };
     }
 
+    if (beeMode === 'cli') {
+      // Unattended sync on the owner's PC: an SSO session expires after ~8 h, so the scheduled task
+      // uses this user's access key instead. The key is created by the owner in the IAM console and
+      // lives only in ~/.aws/credentials (profile why-sync); CDK never creates it.
+      const syncUser = new iam.User(this, 'SyncUser');
+      syncUser.addToPolicy(new iam.PolicyStatement({
+        actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem', 'dynamodb:Query', 'dynamodb:Scan'],
+        resources: [table.tableArn]
+      }));
+      syncUser.addToPolicy(new iam.PolicyStatement({
+        actions: ['kms:Decrypt', 'kms:Encrypt', 'kms:GenerateDataKey'], resources: [key.keyArn],
+        conditions: { StringEquals: { 'kms:ViaService': `dynamodb.${this.region}.amazonaws.com` } }
+      }));
+      syncUser.addToPolicy(bedrock);
+      NagSuppressions.addResourceSuppressions(syncUser, [{
+        id: 'AwsSolutions-IAM5', appliesTo: ['Resource::arn:aws:bedrock:*::foundation-model/amazon.nova-2-lite-v1:0'],
+        reason: 'The us. cross-region inference profile routes Nova 2 Lite to several US regions, so the foundation-model ARN needs a region wildcard; the model id is fixed.'
+      }], true);
+      new CfnOutput(this, 'SyncUserName', { value: syncUser.userName });
+    }
+
     const topic = new sns.Topic(this, 'Alerts', { enforceSSL: true });
     topic.addSubscription(new subs.EmailSubscription(ownerEmail));
     const alarm = new cloudwatch.Alarm(this, 'Failures', {

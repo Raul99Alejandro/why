@@ -148,4 +148,40 @@ describe('Why stack in cli mode', () => {
     expect(JSON.stringify(t.findResources('AWS::IAM::Policy'))).not.toContain('secretsmanager');
     expect(Object.keys(t.toJSON().Outputs ?? {})).not.toContain('BeeSecretArn');
   });
+  it('creates a SyncUser limited to the table, its key via DynamoDB, and Nova', () => {
+    t.resourceCountIs('AWS::IAM::User', 1);
+    t.resourceCountIs('AWS::IAM::AccessKey', 0);
+    const user = Object.values(t.findResources('AWS::IAM::User'))[0]!;
+    expect(user.Properties?.ManagedPolicyArns).toBeUndefined();
+    expect(user.Properties?.LoginProfile).toBeUndefined();
+    expect(Object.keys(t.toJSON().Outputs ?? {})).toContain('SyncUserName');
+    const policies = Object.entries(t.findResources('AWS::IAM::Policy')).filter(([id]) => /^SyncUser/.test(id));
+    expect(policies).toHaveLength(1);
+    type Statement = { Action: string | string[]; Resource: unknown; Condition?: unknown };
+    const statements = policies[0]![1].Properties.PolicyDocument.Statement as Statement[];
+    const byAction = (prefix: string) => statements.filter(st => [st.Action].flat().some(a => a.startsWith(prefix)));
+    const ddb = byAction('dynamodb:');
+    expect(ddb).toHaveLength(1);
+    expect([ddb[0]!.Action].flat().sort()).toEqual(['dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:Query', 'dynamodb:Scan', 'dynamodb:UpdateItem']);
+    const table = Object.keys(t.findResources('AWS::DynamoDB::GlobalTable'))[0]!;
+    expect(ddb[0]!.Resource).toEqual({ 'Fn::GetAtt': [table, 'Arn'] });
+    const kms = byAction('kms:');
+    expect(kms).toHaveLength(1);
+    expect([kms[0]!.Action].flat().sort()).toEqual(['kms:Decrypt', 'kms:Encrypt', 'kms:GenerateDataKey']);
+    expect(kms[0]!.Condition).toEqual({ StringEquals: { 'kms:ViaService': 'dynamodb.us-east-1.amazonaws.com' } });
+    const bedrock = byAction('bedrock:');
+    expect(bedrock).toHaveLength(1);
+    expect([bedrock[0]!.Action].flat()).toEqual(['bedrock:InvokeModel']);
+    expect(JSON.stringify(bedrock[0]!.Resource)).toContain('nova-2-lite-v1:0');
+    expect(statements).toHaveLength(3);
+    expect(JSON.stringify(statements)).not.toMatch(/secretsmanager|polly|cognito|s3:/);
+  });
+});
+
+describe('Why stack in http mode', () => {
+  it('has no SyncUser', () => {
+    const t = build('http');
+    t.resourceCountIs('AWS::IAM::User', 0);
+    expect(Object.keys(t.toJSON().Outputs ?? {})).not.toContain('SyncUserName');
+  });
 });
