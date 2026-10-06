@@ -52,7 +52,7 @@ export async function runSync(deps: { source: BeeSource; store: Store; converse:
   for (const day of days) await compileDay({ day, store: deps.store, converse: deps.converse, repos: deps.repos, timeZone: deps.timeZone, now: deps.now, fetchFn: deps.fetchFn });
   const out = {
     saved: collected.saved.length, analyzed: analyzed.length, failed: failed.length,
-    ignoredPersonal: collected.ignoredPersonal, ignoredOffHours: collected.ignoredOffHours, classifyFailed: collected.classifyFailed.length,
+    ignoredPersonal: collected.ignoredPersonal, ignoredOffHours: collected.ignoredOffHours, classifyFailed: collected.classifyFailed.length, classifyGaveUp: collected.classifyGaveUp.length,
     days: [...days].sort()
   };
   log({ level: 'info', msg: 'sync', ...out, waiting: collected.skippedCapturing.length });

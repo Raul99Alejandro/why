@@ -34,6 +34,17 @@ export class MemoryStore implements Store {
     return true;
   }
 
+  private classify = new Map<string, { failures: number; retryAfter: string }>();
+
+  async getClassifyState(sessionId: string) {
+    const s = this.classify.get(sessionId);
+    return s ? { ...s } : null;
+  }
+
+  async setClassifyState(sessionId: string, failures: number, retryAfter: string) {
+    this.classify.set(sessionId, { failures, retryAfter });
+  }
+
   async isIgnored(sessionId: string) {
     return this.ignored.has(sessionId);
   }
@@ -61,7 +72,7 @@ export class MemoryStore implements Store {
   }
 
   async listPending() {
-    return [...this.sessions.values()].filter((r) => r.state !== 'analyzed').map((r) => r.session.id);
+    return [...this.sessions.values()].filter((r) => r.state !== 'analyzed' && r.state !== 'pending_review').map((r) => r.session.id);
   }
 
   async putDay(log: DayLog) {

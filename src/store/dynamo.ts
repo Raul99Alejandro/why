@@ -127,6 +127,14 @@ export class DynamoStore implements Store {
   // A discarded segment leaves two small items: a marker by id (so a re-seen conversation is not counted twice)
   // and a reference under its day (for the per-day counter). Neither holds any conversation text.
   async recordIgnored(day: string, sessionId: string, kind: IgnoredKind): Promise<boolean> {
+    // The counted item goes first (same key every time, so repeating it changes nothing); the marker that
+    // makes the call idempotent goes last. A crash in between leaves a count that the retry re-writes, never a marker without a count.
+    await this.doc.send(
+      new PutCommand({
+        TableName: this.table,
+        Item: { pk: `DAY#${day}`, sk: `IGNORED#${sessionId}`, kind },
+      })
+    );
     try {
       await this.doc.send(
         new PutCommand({
@@ -139,13 +147,21 @@ export class DynamoStore implements Store {
       if ((err as { name?: string }).name === 'ConditionalCheckFailedException') return false;
       throw err;
     }
+    return true;
+  }
+
+  async getClassifyState(sessionId: string) {
+    const it = await this.get<{ failures: number; retryAfter: string }>(`CLASSIFY#${sessionId}`, 'STATE');
+    return it ? { failures: it.failures, retryAfter: it.retryAfter } : null;
+  }
+
+  async setClassifyState(sessionId: string, failures: number, retryAfter: string) {
     await this.doc.send(
       new PutCommand({
         TableName: this.table,
-        Item: { pk: `DAY#${day}`, sk: `IGNORED#${sessionId}`, kind },
+        Item: { pk: `CLASSIFY#${sessionId}`, sk: 'STATE', failures, retryAfter },
       })
     );
-    return true;
   }
 
   async isIgnored(sessionId: string): Promise<boolean> {
@@ -214,9 +230,9 @@ export class DynamoStore implements Store {
     const out = await this.doc.send(
       new ScanCommand({
         TableName: this.table,
-        FilterExpression: 'sk = :m AND #s <> :a',
+        FilterExpression: 'sk = :m AND #s <> :a AND #s <> :r',
         ExpressionAttributeNames: { '#s': 'state' },
-        ExpressionAttributeValues: { ':m': 'META', ':a': 'analyzed' },
+        ExpressionAttributeValues: { ':m': 'META', ':a': 'analyzed', ':r': 'pending_review' },
       })
     );
     return (out.Items ?? []).map((i) => i.id as string);

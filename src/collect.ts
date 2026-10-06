@@ -9,8 +9,10 @@ export interface CollectResult {
   saved: string[]; skippedCapturing: string[]; cursor: string;
   /** Segments discarded in this run (counts only). */
   ignoredPersonal: number; ignoredOffHours: number;
-  /** Segments the classifier could not judge: not stored, retried next run. */
+  /** Segments the classifier could not judge (this run, or still backing off): not stored yet, retried later. */
   classifyFailed: string[];
+  /** Segments given up after MAX_CLASSIFY_FAILURES: stored as pending_review (never analyzed or published). */
+  classifyGaveUp: string[];
   /** Days whose ignored counters changed. */
   ignoredDays: string[];
 }
@@ -19,6 +21,10 @@ const RAW_TTL_SECONDS = 30 * 24 * 3600;
 export const GAP_MS = 20 * 60_000;
 /** A segment whose last utterance is older than this counts as finished even if Bee still says CAPTURING. */
 export const QUIET_MS = 30 * 60_000;
+/** After this many failed classifier calls a segment is parked for review and the cursor moves on. */
+export const MAX_CLASSIFY_FAILURES = 6;
+/** Wait before the next try after n failures: 5, 10, 20, 40, 60 minutes. */
+export const classifyBackoffMs = (failures: number) => Math.min(5 * 2 ** (failures - 1), 60) * 60_000;
 
 /**
  * Bee can keep one conversation CAPTURING for many hours and append every new recording to it,
@@ -80,6 +86,7 @@ export async function collect(opts: {
   const saved: string[] = [];
   const skippedCapturing: string[] = [];
   const classifyFailed: string[] = [];
+  const classifyGaveUp: string[] = [];
   const ignoredDays = new Set<string>();
   let ignoredPersonal = 0;
   let ignoredOffHours = 0;
@@ -91,6 +98,8 @@ export async function collect(opts: {
       // A conversation seen again (the cursor was held back) is not judged or counted twice.
       if (await opts.store.getSession(session.id) || await opts.store.isIgnored(session.id)) continue;
       const kept = trimToHours(session, opts.workHours);
+      const state = kept ? await opts.store.getClassifyState(session.id) : null;
+      if (state && Date.parse(state.retryAfter) > opts.now.getTime()) { classifyFailed.push(session.id); continue; } // backing off
       const label = kept ? await opts.classify(kept) : null;
       const outcome = segmentOutcome(kept !== null, label);
       if (outcome === 'ignoredOffHours' || outcome === 'ignoredPersonal') {
@@ -101,7 +110,20 @@ export async function collect(opts: {
           ignoredDays.add(day);
         }
       } else if (outcome === 'pending') {
-        classifyFailed.push(session.id);
+        const failures = (state?.failures ?? 0) + 1;
+        if (failures >= MAX_CLASSIFY_FAILURES) {
+          // Give up: park it for review (not analyzed, not published) so one bad segment cannot hold the cursor forever.
+          const stored = kept!;
+          const created = await opts.store.putSession(stored, localDay(stored.startedAt, opts.timeZone), Math.floor(opts.now.getTime() / 1000) + RAW_TTL_SECONDS);
+          if (created) await opts.store.setAnalysis(stored.id, null, 'pending_review');
+          classifyGaveUp.push(stored.id);
+          classifyFailed.push(stored.id);
+          log({ level: 'warn', msg: 'classify_gave_up', sessionId: stored.id, failures });
+        } else {
+          await opts.store.setClassifyState(session.id, failures, new Date(opts.now.getTime() + classifyBackoffMs(failures)).toISOString());
+          classifyFailed.push(session.id);
+          if (failures >= 3) log({ level: 'warn', msg: 'classify_failing', sessionId: session.id, failures });
+        }
       } else {
         const stored = kept!;
         const created = await opts.store.putSession(
@@ -113,9 +135,10 @@ export async function collect(opts: {
       }
     }
   }
-  const hold = skippedCapturing.length > 0 || classifyFailed.length > 0 || !nextCursor;
+  const waiting = classifyFailed.filter(id => !classifyGaveUp.includes(id));
+  const hold = skippedCapturing.length > 0 || waiting.length > 0 || !nextCursor;
   const cursor = hold ? (previous?.cursor ?? '') : nextCursor;
   await opts.store.setCursor(cursor, opts.now.toISOString());
-  log({ level: 'info', msg: 'work_filter', stored: saved.length, ignoredPersonal, ignoredOffHours, classifyFailed: classifyFailed.length });
-  return { saved, skippedCapturing, cursor, ignoredPersonal, ignoredOffHours, classifyFailed, ignoredDays: [...ignoredDays].sort() };
+  log({ level: 'info', msg: 'work_filter', stored: saved.length, ignoredPersonal, ignoredOffHours, classifyFailed: classifyFailed.length, classifyGaveUp: classifyGaveUp.length });
+  return { saved, skippedCapturing, cursor, ignoredPersonal, ignoredOffHours, classifyFailed, classifyGaveUp, ignoredDays: [...ignoredDays].sort() };
 }

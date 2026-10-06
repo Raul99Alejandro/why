@@ -17,11 +17,14 @@ export interface Store {
   /** Remembers that a segment was discarded by the work filter (id and kind only, never its text). Returns false if it was already recorded. */
   recordIgnored(day: string, sessionId: string, kind: IgnoredKind): Promise<boolean>;
   isIgnored(sessionId: string): Promise<boolean>;
+  /** How often the classifier failed for a segment, and when it may be tried again. */
+  getClassifyState(sessionId: string): Promise<{ failures: number; retryAfter: string } | null>;
+  setClassifyState(sessionId: string, failures: number, retryAfter: string): Promise<void>;
   ignoredCounts(day: string): Promise<{ personal: number; offHours: number }>;
   getSession(id: string): Promise<SessionRecord | null>;
   setAnalysis(id: string, analysis: Analysis | null, state: SessionState): Promise<void>;
   listSessionsOn(day: string): Promise<SessionRecord[]>;
-  listPending(): Promise<string[]>; // ids in state captured or pending_analysis
+  listPending(): Promise<string[]>; // ids in state captured or pending_analysis (never pending_review)
   putDay(log: DayLog): Promise<void>;
   getDay(date: string): Promise<DayLog | null>;
   deleteDay(date: string): Promise<void>;

@@ -1,6 +1,6 @@
 export type Utterance = { speaker: string; text: string; at?: string };
 export type Session = { id: string; startedAt: string; endedAt: string; utterances: Utterance[] };
-export type SessionState = 'captured' | 'analyzed' | 'pending_analysis';
+export type SessionState = 'captured' | 'analyzed' | 'pending_analysis' | 'pending_review';
 export type Decision = { what: string; why: string; quote: string; quoteOriginal: string; at: string };
 export type Analysis = { topic: string; summary: string; decisions: Decision[]; todos: string[]; openQuestions: string[] };
 export type CommitRef = { repo: string; sha: string; message: string; url: string; at: string };

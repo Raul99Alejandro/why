@@ -176,7 +176,7 @@ describe('work filter (W-01)', () => {
     expect(await store.getSession(r1.classifyFailed[0]!)).toBeNull();
     expect(await store.isIgnored(r1.classifyFailed[0]!)).toBe(false);
     expect((await store.getCursor())!.cursor).toBe('v1-1');
-    const r2 = await collect({ source: source([conv]), store, timeZone: tz, now: NOW, workHours: OFFICE, classify: async () => 'work' });
+    const r2 = await collect({ source: source([conv]), store, timeZone: tz, now: new Date(NOW.getTime() + 10 * MIN), workHours: OFFICE, classify: async () => 'work' });
     expect(r2.saved).toHaveLength(1);
     expect(r2.classifyFailed).toEqual([]);
     expect((await store.getCursor())!.cursor).toBe('v1-2');

@@ -19,6 +19,15 @@ const parseClock = (v: string | undefined, fallback: number): number => {
   return Number(m[1]) <= 24 && Number(m[2]) < 60 && min <= 24 * 60 ? min : fallback;
 };
 
+/** The zone if the runtime knows it; otherwise the default, with a warning (a bad value must not break every run). */
+function validZone(tz: string | undefined): string {
+  if (!tz) return DEFAULT_TIME_ZONE;
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return tz; } catch {
+    log({ level: 'warn', msg: 'invalid_time_zone', fallback: DEFAULT_TIME_ZONE });
+    return DEFAULT_TIME_ZONE;
+  }
+}
+
 /** WORK_DAYS ("1,2,3,4,5,6"), WORK_START ("09:00"), WORK_END ("20:00"), TIME_ZONE. Anything invalid falls back to the default. */
 export function readWorkHours(env: Record<string, string | undefined> = process.env): WorkHours {
   const days = (env.WORK_DAYS ?? '').split(',').map(s => Number(s.trim())).filter(n => Number.isInteger(n) && n >= 1 && n <= 7);
@@ -27,7 +36,7 @@ export function readWorkHours(env: Record<string, string | undefined> = process.
   return {
     days: days.length ? [...new Set(days)] : DEFAULT_HOURS.days,
     ...(startMin < endMin ? { startMin, endMin } : { startMin: DEFAULT_HOURS.startMin, endMin: DEFAULT_HOURS.endMin }),
-    timeZone: env.TIME_ZONE || DEFAULT_TIME_ZONE
+    timeZone: validZone(env.TIME_ZONE)
   };
 }
 
@@ -77,12 +86,13 @@ const CLASSIFY_SYSTEM = [
 ].join(' ');
 const MAX_CLASSIFY_CHARS = 6000;
 
-/** The text the classifier sees: the start and the end of the segment, never more than MAX_CLASSIFY_CHARS. */
+/** The text the classifier sees: the head, the middle and the tail of the segment, never more than MAX_CLASSIFY_CHARS. */
 export function classifierText(session: Session): string {
   const text = session.utterances.map(u => `${u.speaker}: ${u.text}`).join('\n');
   if (text.length <= MAX_CLASSIFY_CHARS) return text;
-  const half = MAX_CLASSIFY_CHARS / 2;
-  return `${text.slice(0, half)}\n[...]\n${text.slice(-half)}`;
+  const part = Math.floor((MAX_CLASSIFY_CHARS - 2 * '\n[...]\n'.length) / 3);
+  const mid = Math.floor((text.length - part) / 2);
+  return [text.slice(0, part), text.slice(mid, mid + part), text.slice(-part)].join('\n[...]\n');
 }
 
 /** One cheap model call per finished segment. Null if the call failed twice (the caller keeps the segment pending). */
