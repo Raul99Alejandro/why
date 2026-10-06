@@ -140,6 +140,7 @@ describe('work filter counter', () => {
     const html = dayHtml({ ...day, decisions: [d] }, { private: true });
     expect(html).toContain('badge-changed">Changed<');
     expect(html).toMatch(/data-date="2026-10-01"[^>]*>Oct 1</); expect(html).toMatch(/data-date="2026-09-28"/);
+    expect(html).toContain('aria-label="Open Oct 1"');
     expect(html).toContain('Use &lt;b&gt;Nova&lt;/b&gt;'); expect(html).not.toContain('<b>Nova');
     expect(html).toContain('Work that may need undoing'); expect(html).toContain('old1111');
     expect(html).toMatch(/Changed later<\/span> <button[^>]*data-date="2026-10-05"/);

@@ -32,7 +32,7 @@ export function recompiler(deps: { store: Store; converse: ConverseFn; repos: st
 /** The day log is rebuilt at most this often when nothing new arrived (commits can land any time; the sync runs every 5 minutes). */
 export const TODAY_REFRESH_MS = 30 * 60_000;
 
-export async function runSync(deps: { source: BeeSource; store: Store; converse: ConverseFn; repos: string[]; timeZone: string; now: Date; fetchFn?: typeof fetch; workHours?: WorkHours; todos?: BeeTodos; backfill?: boolean }) {
+export async function runSync(deps: { source: BeeSource; store: Store; converse: ConverseFn; repos: string[]; timeZone: string; now: Date; fetchFn?: typeof fetch; workHours?: WorkHours; todos?: BeeTodos; backfill?: boolean; ledger?: boolean }) {
   const workHours = deps.workHours ?? readWorkHours({ ...process.env, TIME_ZONE: deps.timeZone });
   const collected = await collect({
     source: deps.source, store: deps.store, timeZone: deps.timeZone, now: deps.now, workHours,
@@ -54,13 +54,16 @@ export async function runSync(deps: { source: BeeSource; store: Store; converse:
   // Reversals, refinements and Bee todos. A Bee failure only leaves writes pending; it must never stop the sync.
   const today2 = today;
   let ledger: LedgerResult | null = null;
+  // Only the owner's PC sync writes the ledger and Bee (one writer); the cloud sync leaves it alone.
   try {
+    if (deps.ledger) {
     ledger = await reconcile({
       store: deps.store, converse: deps.converse, ...(deps.todos ? { todos: deps.todos } : {}), repos: deps.repos, timeZone: deps.timeZone, now: deps.now, fetchFn: deps.fetchFn,
       days: deps.backfill ? windowDays(today2) : [...days]
     });
     for (const d of ledger.affectedDays) days.add(d);
     if (deps.backfill) for (const d of windowDays(today2)) if (await deps.store.getDay(d)) days.add(d);
+    }
   } catch (err) {
     log({ level: 'error', msg: 'ledger_failed', error: (err as Error).name });
   }

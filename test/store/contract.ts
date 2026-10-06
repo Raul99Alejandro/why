@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Analysis, DayLog, Session } from '../../src/domain/types.js';
-import type { Store } from '../../src/store/store.js';
+import type { DecisionRecord, Store } from '../../src/store/store.js';
 
 export const session = (id: string, startedAt = '2026-10-03T18:00:00.000Z'): Session => ({
   id,
@@ -98,19 +98,26 @@ export function storeContract(name: string, make: () => Promise<Store>): void {
       expect(await s.listSessionsOn('2026-10-03')).toEqual([]);
     });
 
-    it('keeps decision records per day and deletes them with their session', async () => {
+    it('keeps versioned decision records per day and deletes them with their session', async () => {
       const s = await make();
-      const rec = (id: string, sessionId: string, day: string) => ({ id, sessionId, day, at: `${day}T18:00:00.000Z` });
+      const rec = (id: string, sessionId: string, day: string): DecisionRecord => ({ id, sessionId, day, at: `${day}T18:00:00.000Z`, v: 0 });
       await s.putSession(session('a'), '2026-10-03', 9_999_999_999);
-      await s.putDecisionRecord({ ...rec('a#0', 'a', '2026-10-03'), relation: { kind: 'reversal', priorId: 'z#0', priorDay: '2026-10-01' }, alert: { state: 'done', todoId: '7' } });
-      await s.putDecisionRecord({ ...rec('a#1', 'a', '2026-10-03'), followUp: { state: 'open', text: 'Do it', todoId: '8', checked: [] } });
-      await s.putDecisionRecord(rec('b#0', 'b', '2026-10-03'));
-      await s.putDecisionRecord({ ...rec('a#1', 'a', '2026-10-03'), followUp: { state: 'closed', text: 'Do it', todoId: '8', checked: ['c1'] } }); // overwrite
+      expect(await s.createDecisionRecord({ ...rec('a#0', 'a', '2026-10-03'), relation: { kind: 'reversal', priorId: 'z#0', priorDay: '2026-10-01' }, alert: { state: 'done', todoId: '7' } })).toBe(true);
+      expect(await s.createDecisionRecord(rec('a#0', 'a', '2026-10-03'))).toBe(false); // never created twice
+      const a1 = { ...rec('a#1', 'a', '2026-10-03'), followUp: { state: 'open' as const, text: 'Do it', todoId: '8', checked: [] } };
+      await s.createDecisionRecord(a1);
+      await s.createDecisionRecord(rec('b#0', 'b', '2026-10-03'));
+      const mine = { ...a1, followUp: { ...a1.followUp, state: 'closed' as const, checked: ['c1'] } };
+      const other = { ...a1 }; // a second writer that read the same version
+      expect(await s.saveDecisionRecord(mine)).toBe(true);
+      expect(mine.v).toBe(1);
+      expect(await s.saveDecisionRecord({ ...other, followUp: { ...a1.followUp, state: 'closing' as const } })).toBe(false); // stale version loses
       expect((await s.listDecisionRecords('2026-10-03')).map((r) => r.id).sort()).toEqual(['a#0', 'a#1', 'b#0']);
       expect((await s.listDecisionRecords('2026-10-03')).find((r) => r.id === 'a#1')!.followUp!.state).toBe('closed');
       expect(await s.listDecisionRecords('2026-10-04')).toEqual([]);
+      await s.deleteDecisionRecord('2026-10-03', 'b#0');
       await s.forgetSession('a');
-      expect((await s.listDecisionRecords('2026-10-03')).map((r) => r.id)).toEqual(['b#0']);
+      expect(await s.listDecisionRecords('2026-10-03')).toEqual([]);
     });
 
     it('forgets a session completely', async () => {

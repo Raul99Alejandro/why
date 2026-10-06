@@ -129,3 +129,14 @@ export async function closingCommit(opts: { what: string; step: string; decision
   if (eligible.length >= 4 && named.length > eligible.length / 2) return { commit: null }; // an answer naming most commits is not trustworthy
   return { commit: named[0] ?? null };
 }
+
+const tokens = (t: string): Set<string> => new Set(t.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length > 1));
+/** Token overlap (Jaccard) of two short texts: 1 for the same words in any order or case. */
+export function similarity(a: string, b: string): number {
+  const x = tokens(a), y = tokens(b);
+  if (x.size === 0 || y.size === 0) return 0;
+  let both = 0;
+  for (const w of x) if (y.has(w)) both++;
+  return both / (x.size + y.size - both);
+}
+export const SAME_STEP = 0.8;

@@ -322,13 +322,42 @@ export class DynamoStore implements Store {
   }
 
   // Decision records live under their day (pk DEC#<day>) so a window of days is a few Query calls, never a Scan.
-  async putDecisionRecord(record: DecisionRecord) {
-    await this.doc.send(
-      new PutCommand({
-        TableName: this.table,
-        Item: { pk: `DEC#${record.day}`, sk: `D#${record.id}`, record },
-      })
-    );
+  async createDecisionRecord(record: DecisionRecord) {
+    try {
+      await this.doc.send(
+        new PutCommand({
+          TableName: this.table,
+          ConditionExpression: 'attribute_not_exists(pk)',
+          Item: { pk: `DEC#${record.day}`, sk: `D#${record.id}`, v: 0, record: { ...record, v: 0 } },
+        })
+      );
+      return true;
+    } catch (err) {
+      if ((err as { name?: string }).name === 'ConditionalCheckFailedException') return false;
+      throw err;
+    }
+  }
+
+  async saveDecisionRecord(record: DecisionRecord) {
+    try {
+      await this.doc.send(
+        new PutCommand({
+          TableName: this.table,
+          ConditionExpression: 'v = :v',
+          ExpressionAttributeValues: { ':v': record.v },
+          Item: { pk: `DEC#${record.day}`, sk: `D#${record.id}`, v: record.v + 1, record: { ...record, v: record.v + 1 } },
+        })
+      );
+      record.v++;
+      return true;
+    } catch (err) {
+      if ((err as { name?: string }).name === 'ConditionalCheckFailedException') return false;
+      throw err;
+    }
+  }
+
+  async deleteDecisionRecord(day: string, id: string) {
+    await this.doc.send(new DeleteCommand({ TableName: this.table, Key: { pk: `DEC#${day}`, sk: `D#${id}` } }));
   }
 
   async listDecisionRecords(day: string) {

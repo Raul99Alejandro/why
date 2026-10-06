@@ -1,55 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { compileDay } from '../src/compile.js';
-import { reconcile, type LedgerResult } from '../src/ledger.js';
+import { decisionIds, reconcile, type LedgerResult } from '../src/ledger.js';
 import { publishDay, forgetSession } from '../src/publish.js';
 import { runSync } from '../src/runtime.js';
 import { MemoryStore } from '../src/store/memory.js';
 import type { Store } from '../src/store/store.js';
 import { fakeModel, FakeTodos } from './helpers/fakes.js';
-
-const TZ = 'America/Mexico_City';
-const NOW = new Date('2026-10-06T18:00:00.000Z'); // noon in Mexico City
-const FRESH = '2026-10-06T17:00:00.000Z';
-
-type Seed = { id: string; day: string; at: string; topic?: string; decisions: { what: string; why?: string; at?: string }[] };
-async function seed(store: Store, s: Seed) {
-  await store.putSession({ id: s.id, startedAt: s.at, endedAt: s.at, utterances: [{ speaker: 'Unknown', text: 'private words that must not travel' }] }, s.day, 9e9);
-  await store.setAnalysis(s.id, {
-    topic: s.topic ?? 'Answers model', summary: 's',
-    decisions: s.decisions.map(d => ({ what: d.what, why: d.why ?? 'No reason given', quote: `quote of ${d.what}`, quoteOriginal: 'original', at: d.at ?? s.at })),
-    todos: [], openQuestions: []
-  }, 'analyzed');
-}
-
-type Verdict = { relation: string; prior?: string; nextStep?: string };
-/** Judge fake: verdicts keyed by the text of the current decision; the prior is named by its text and turned into its label. */
-function judge(verdicts: Record<string, Verdict>, closes: Record<string, string[]> = {}) {
-  const calls = { judge: 0, close: 0 };
-  const model = fakeModel((tool, _system, user) => {
-    if (tool === 'save_closing_commits') {
-      calls.close++;
-      const step = /<step>(.*?) \(from the decision:/s.exec(user)![1]!;
-      const shas = [...user.matchAll(/<commit sha="([^"]+)">([^<]*)<\/commit>/g)].filter(m => (closes[step] ?? []).some(k => m[2]!.includes(k))).map(m => m[1]);
-      return { commits: shas };
-    }
-    if (tool === 'save_judgement') {
-      calls.judge++;
-      const current = /<current>(.*?) \(reason:/s.exec(user)![1]!;
-      const v = verdicts[current] ?? { relation: 'unrelated' };
-      const label = v.prior ? [...user.matchAll(/<prior label="(P\d+)"[^>]*>([^<]*)<\/prior>/g)].find(m => m[2] === v.prior)?.[1] ?? '' : '';
-      return { relation: v.relation, priorId: label, nextStep: v.nextStep ?? '' };
-    }
-    if (tool === 'save_day_summary') return { summary: 'A day.' };
-    return { links: [] };
-  });
-  return { model, calls };
-}
-
-const run = (store: Store, model: ReturnType<typeof judge>['model'], days: string[], todos?: FakeTodos, extra: Record<string, unknown> = {}) =>
-  reconcile({ store, converse: model, ...(todos ? { todos } : {}), repos: [], timeZone: TZ, now: NOW, days, ...extra });
-
-const commitFetch = (commits: { sha: string; message: string; date: string }[]) =>
-  (async () => new Response(JSON.stringify(commits.map(c => ({ sha: `${c.sha}0000`, html_url: `https://github.com/o/r/commit/${c.sha}`, commit: { message: c.message, author: { date: c.date } } }))), { status: 200 })) as typeof fetch;
+import { commitFetch, FRESH, id, judge, NOW, run, seed, TZ, type Verdict } from './helpers/ledger.js';
 
 describe('reversal detection (W-02)', () => {
   it('links a direct contradiction, alerts once in Bee with a 10 minute alarm, and never again', async () => {
@@ -66,7 +23,7 @@ describe('reversal detection (W-02)', () => {
     expect(t.text.length).toBeLessThanOrEqual(120);
     expect(t.alarmAt).toBe('2026-10-06T18:10:00.000Z');
     expect(JSON.stringify(todos.created)).not.toMatch(/quote of|private words/);
-    expect((await store.listDecisionRecords('2026-10-06'))[0]).toMatchObject({ relation: { kind: 'reversal', priorId: 's1#0', priorDay: '2026-10-03' }, alert: { state: 'done', todoId: 't1' } });
+    expect((await store.listDecisionRecords('2026-10-06'))[0]).toMatchObject({ relation: { kind: 'reversal', priorId: id('s1', 'Use Nova for the answers'), priorDay: '2026-10-03' }, alert: { state: 'done', todoId: 't1' } });
     const again = await run(store, model, ['2026-10-03', '2026-10-06'], todos);
     expect(again).toMatchObject({ judged: 0, alertsCreated: 0 });
     expect(todos.created).toHaveLength(1);
@@ -93,7 +50,7 @@ describe('reversal detection (W-02)', () => {
     expect(r).toMatchObject({ refinements: 1, reversals: 0, alertsCreated: 0 });
     expect(todos.created).toHaveLength(0);
     const rec = (await store.listDecisionRecords('2026-10-06'))[0]!;
-    expect(rec.relation).toMatchObject({ kind: 'refinement', priorId: 's1#0' });
+    expect(rec.relation).toMatchObject({ kind: 'refinement', priorId: id('s1', 'Use Nova for the answers') });
     expect(rec.alert).toBeUndefined();
   });
 
@@ -117,7 +74,7 @@ describe('reversal detection (W-02)', () => {
     await seed(store, { id: 's2', day: '2026-10-06', at: FRESH, decisions: [{ what: 'The demo video goes out Friday' }] });
     const { model } = judge({
       'Ship the demo video on Friday': { relation: 'unrelated', nextStep: 'Ship the demo video on Friday' },
-      'The demo video goes out Friday': { relation: 'unrelated', nextStep: 'ship the demo video on friday' }
+      'The demo video goes out Friday': { relation: 'unrelated', nextStep: 'Ship the demo video on Friday morning' }
     });
     await run(store, model, ['2026-10-06'], todos);
     expect(todos.created).toHaveLength(1);
@@ -173,13 +130,13 @@ describe('reversal detection (W-02)', () => {
 });
 
 describe('Bee todos', () => {
-  it('review focus 3: Bee offline never throws, stops after the first failure, and retries next run', async () => {
+  it('review focus 3: Bee offline never throws, gives up for the run after a few failures, and retries next run', async () => {
     const store = new MemoryStore(); const todos = new FakeTodos(); todos.offline = true;
     await seed(store, { id: 's1', day: '2026-10-06', at: FRESH, decisions: [{ what: 'Record the demo' }, { what: 'Write the README' }] });
     const { model, calls } = judge({ 'Record the demo': { relation: 'unrelated', nextStep: 'Record the demo' }, 'Write the README': { relation: 'unrelated', nextStep: 'Write the README' } });
     const first = await run(store, model, ['2026-10-06'], todos);
-    expect(first).toMatchObject({ judged: 2, beeFailed: 1, followUpsCreated: 0 });
-    expect(todos.calls).toBe(1);
+    expect(first).toMatchObject({ judged: 2, beeFailed: 2, followUpsCreated: 0 });
+    expect(todos.calls).toBe(2);
     todos.offline = false;
     const second = await run(store, model, [], todos);
     expect(second).toMatchObject({ judged: 0, followUpsCreated: 2, beeFailed: 0 });
@@ -296,6 +253,8 @@ describe('forgetting a session', () => {
     const pub = await publishDay({ store, day: '2026-10-06', excludeSessions: ['s1'], now: NOW });
     expect(pub!.decisions[0]!.change).toBeUndefined();
     expect(JSON.stringify(pub)).not.toContain('Use Nova');
+    const oldSide = await publishDay({ store, day: '2026-10-05', excludeSessions: ['s2'], now: NOW });
+    expect(oldSide!.decisions[0]!.changedLater).toBeUndefined(); // the later, excluded session does not show through a link
   });
 });
 
@@ -305,7 +264,7 @@ describe('runSync wiring', () => {
     await seed(store, { id: 's1', day: '2026-10-06', at: FRESH, decisions: [{ what: 'Record the demo' }] });
     const { model } = judge({ 'Record the demo': { relation: 'unrelated', nextStep: 'Record the demo' } });
     const source = { changedSince: async () => ({ ids: [], nextCursor: 'c' }), conversation: async () => { throw new Error('none'); } };
-    const deps = { source, store, converse: model, repos: [], timeZone: TZ, now: NOW, todos };
+    const deps = { source, store, converse: model, repos: [], timeZone: TZ, now: NOW, todos, ledger: true };
     const out = await runSync(deps);
     expect(out).toMatchObject({ beeFailed: 1, todosCreated: 0 });
     todos.offline = false;

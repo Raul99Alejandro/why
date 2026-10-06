@@ -57,7 +57,7 @@ function ownerMenu(day: Day): string {
     + (forgets ? `<p class="menu-label">Forget a session</p>${forgets}` : '') + `</div></details>`;
 }
 
-const dayLink = (date: string, label: string) => `<button type="button" class="link-day" data-date="${e(date)}">${e(label)}</button>`;
+const dayLink = (date: string, label: string) => `<button type="button" class="link-day" data-date="${e(date)}" aria-label="Open ${e(shortDate(date))}">${e(label)}</button>`;
 
 /** "Changed" badge on a reversal (both days linked, the old commits as work that may need undoing), small notes for the other links, and the follow-up state. */
 function changeNotes(d: Day['decisions'][number]): string {

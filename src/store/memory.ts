@@ -111,8 +111,22 @@ export class MemoryStore implements Store {
 
   private decisions = new Map<string, DecisionRecord>();
 
-  async putDecisionRecord(record: DecisionRecord) {
+  async createDecisionRecord(record: DecisionRecord) {
+    if (this.decisions.has(record.id)) return false;
+    this.decisions.set(record.id, structuredClone({ ...record, v: 0 }));
+    return true;
+  }
+
+  async saveDecisionRecord(record: DecisionRecord) {
+    const cur = this.decisions.get(record.id);
+    if (!cur || cur.v !== record.v) return false;
+    record.v++;
     this.decisions.set(record.id, structuredClone(record));
+    return true;
+  }
+
+  async deleteDecisionRecord(_day: string, id: string) {
+    this.decisions.delete(id);
   }
 
   async listDecisionRecords(day: string) {

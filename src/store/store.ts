@@ -12,13 +12,23 @@ export interface SessionRecord {
  * It holds ids and short follow-up wording only (the follow-up step is Why's own sentence), never transcript text.
  * Its presence means "already judged": a decision is never judged, alerted or turned into a todo twice.
  */
+export type TodoSlot = {
+  /** pending -> creating (text saved, Bee call in flight or crashed) -> done; skipped: nothing to do; gone: the Bee todo was deleted or kept failing. */
+  state: 'pending' | 'creating' | 'done' | 'skipped' | 'gone';
+  text?: string; todoId?: string; attempts?: number;
+};
 export type DecisionRecord = {
   id: string; sessionId: string; day: string; at: string;
+  /** Version for optimistic writes: a save succeeds only if the stored version is still this one. */
+  v: number;
   relation?: { kind: 'reversal' | 'refinement' | 'restatement'; priorId: string; priorDay: string };
-  /** Reversal alert in Bee: pending until the CLI call succeeded, then done with the Bee todo id. 'skipped' for old decisions. */
-  alert?: { state: 'pending' | 'done' | 'skipped'; todoId?: string };
-  /** Follow-up todo: pending (to create) -> open (in Bee) -> closing (matched, Bee completion to retry) -> closed. */
-  followUp?: { state: 'pending' | 'open' | 'closing' | 'closed' | 'skipped'; text: string; todoId?: string; checked: string[]; closedBy?: CommitRef };
+  /** Reversal alert in Bee. 'skipped' for old decisions. */
+  alert?: TodoSlot;
+  /** Follow-up todo: pending/creating/done(open in Bee) -> closing (matched, completion to retry) -> closed. */
+  followUp?: {
+    state: 'pending' | 'creating' | 'open' | 'closing' | 'closed' | 'skipped' | 'gone';
+    text: string; todoId?: string; checked: string[]; closedBy?: CommitRef; attempts?: number;
+  };
 };
 
 export type IgnoredKind = 'personal' | 'offHours' | 'unclassified';
@@ -47,7 +57,11 @@ export interface Store {
   getPublished(date: string): Promise<PublishedDay | null>;
   listPublished(): Promise<string[]>;
   deletePublished(date: string): Promise<void>;
-  putDecisionRecord(record: DecisionRecord): Promise<void>;
+  /** Stores a new record (version 0). Returns false if one with that id already exists. */
+  createDecisionRecord(record: DecisionRecord): Promise<boolean>;
+  /** Saves a changed record if its stored version is still `record.v`; on success bumps `record.v`. Returns false when another writer got there first. */
+  saveDecisionRecord(record: DecisionRecord): Promise<boolean>;
+  deleteDecisionRecord(day: string, id: string): Promise<void>;
   /** Every decision record of a local day (any order). */
   listDecisionRecords(day: string): Promise<DecisionRecord[]>;
   /** Deletes every record of a session (META, RAW, ANALYSIS, its DAY# reference, its decision records). Returns its day, or null. */

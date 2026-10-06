@@ -6,7 +6,25 @@ export interface BeeTodos {
   /** Creates a todo and returns its Bee id. */
   create(text: string, alarmAt?: string): Promise<string>;
   complete(id: string): Promise<void>;
+  /** The newest todos (id and text), to find one whose creation may have succeeded before a crash. */
+  list(): Promise<{ id: string; text: string }[]>;
 }
+
+/** A Bee CLI failure reduced to what is safe to log: never the command line (it holds todo text) or the CLI's output. */
+export class BeeCliError extends Error {
+  constructor(readonly notFound: boolean, readonly code: string) { super(`bee cli failed (${notFound ? 'not found' : code})`); this.name = 'BeeCliError'; }
+}
+const describe = (err: unknown): BeeCliError => {
+  if (err instanceof BeeCliError) return err;
+  const e = err as { code?: unknown; stderr?: unknown; name?: string };
+  const out = `${typeof e.stderr === 'string' ? e.stderr : ''}`;
+  return new BeeCliError(/not.?found|404|no such|does not exist/i.test(out), String(e.code ?? e.name ?? 'error'));
+};
+/** Error class and exit code only. */
+export const errorInfo = (err: unknown): { error: string; code: string; notFound: boolean } => {
+  const d = describe(err);
+  return { error: d.name, code: d.code, notFound: d.notFound };
+};
 
 const exec = promisify(execFile);
 const SAFE_ID = /^\w[\w-]*$/;
@@ -35,17 +53,32 @@ export class CliBeeTodos implements BeeTodos {
       args.push('--alarm-at', new Date(alarmAt).toISOString());
     }
     args.push('--json');
-    return parseTodoId(JSON.parse(await this.run(args)));
+    return parseTodoId(JSON.parse(await this.call(args)));
+  }
+
+  async list() {
+    const j = JSON.parse(await this.call(['todos', 'list', '--limit', '100', '--json'])) as { todos?: unknown[] } | unknown[];
+    const items = (Array.isArray(j) ? j : (j.todos ?? [])) as { id?: unknown; text?: unknown }[];
+    return items.filter(t => t.id !== undefined && typeof t.text === 'string').map(t => ({ id: String(t.id), text: t.text as string }));
+  }
+
+  private async call(args: string[]): Promise<string> {
+    try { return await this.run(args); } catch (err) { throw describe(err); }
   }
 
   async complete(id: string) {
     if (!SAFE_ID.test(id)) throw new Error('Invalid Bee todo id');
-    await this.run(['todos', 'complete', id, '--json']);
+    await this.call(['todos', 'complete', id, '--json']);
   }
 }
 
-/** Text that is safe as one argument both with and without a shell: only letters, digits and plain punctuation; wrapped in double quotes on Windows. */
+/** The text as Bee will store it: only letters, digits and plain punctuation, arrows as "->". Used to recognise a todo created before a crash. */
+export function plainText(text: string): string {
+  return text.replace(/[^\p{L}\p{N} .,:;!?()'_\-/+=→]/gu, ' ').replace(/→/g, '->').replace(/\s+/g, ' ').trim();
+}
+
+/** Text that is safe as one argument both with and without a shell: wrapped in double quotes on Windows. */
 export function shellSafe(text: string): string {
-  const plain = text.replace(/[^\p{L}\p{N} .,:;!?()'_\-/+=→]/gu, ' ').replace(/→/g, '->').replace(/\s+/g, ' ').trim();
+  const plain = plainText(text);
   return process.platform === 'win32' ? `"${plain}"` : plain;
 }

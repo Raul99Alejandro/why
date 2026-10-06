@@ -36,6 +36,9 @@ function withLinks<T extends Omit<DayDecision, 'quoteOriginal'>>(d: T, keep: (se
     if (from.length && from[0]!.id === d.change.from[0]!.id) out.change = { from, commits: d.change.commits.map(c => ({ ...c, message: redact(c.message) })) };
     else delete out.change;
   }
+  const owner = (id: string) => id.slice(0, id.lastIndexOf('#'));
+  if (d.changedLater && !keep(owner(d.changedLater.id))) delete out.changedLater;
+  if (d.refines && !keep(owner(d.refines.id))) delete out.refines;
   if (d.followUp) out.followUp = { ...d.followUp, text: redact(d.followUp.text), ...(d.followUp.closedBy ? { closedBy: { ...d.followUp.closedBy, message: redact(d.followUp.closedBy.message) } } : {}) };
   return out;
 }

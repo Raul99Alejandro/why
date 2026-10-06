@@ -1,6 +1,6 @@
 import * as z from 'zod/v4';
 import type { ChangeStep, CommitRef, DayDecision, DayLog } from './domain/types.js';
-import { addDays, WINDOW_DAYS } from './ledger.js';
+import { addDays, decisionIds, WINDOW_DAYS } from './ledger.js';
 import { localDay } from './domain/dates.js';
 import { commitsOn } from './github.js';
 import { glossary } from './analyze.js';
@@ -57,7 +57,7 @@ export async function decorate(decisions: DayDecision[], day: string, store: Sto
   const stepOf = async (id: string, d: string): Promise<ChangeStep | null> => {
     const rec = await recordAt(id, d);
     const sess = rec ? await store.getSession(rec.sessionId) : null;
-    const what = sess?.analysis?.decisions[Number(id.slice(id.lastIndexOf('#') + 1))]?.what;
+    const what = sess?.analysis?.decisions[decisionIds(rec!.sessionId, sess.analysis.decisions).indexOf(id)]?.what;
     return rec && what ? { id, date: d, what, sessionId: rec.sessionId } : null;
   };
   return Promise.all(decisions.map(async d => {
@@ -94,7 +94,7 @@ export async function decorate(decisions: DayDecision[], day: string, store: Sto
 export async function compileDay(opts: { day: string; store: Store; converse: ConverseFn; repos: string[]; timeZone: string; now: Date; fetchFn?: typeof fetch }): Promise<DayLog | null> {
   const records = (await opts.store.listSessionsOn(opts.day)).filter(r => r.analysis);
   if (records.length === 0) return null;
-  const decisions: DayDecision[] = records.flatMap(r => r.analysis!.decisions.map((d, i) => ({ ...d, id: `${r.session.id}#${i}`, sessionId: r.session.id, commits: [] })));
+  const decisions: DayDecision[] = records.flatMap(r => r.analysis!.decisions.map((d, i) => ({ ...d, id: decisionIds(r.session.id, r.analysis!.decisions)[i]!, sessionId: r.session.id, commits: [] })));
   const commits = await commitsOn(opts.day, opts.repos, opts.timeZone, opts.fetchFn);
   const summaryOut = summarySchema.safeParse(await forcedTool(opts.converse, {
     system: `You write one short English sentence (at most 25 words) summarizing a workday from its session summaries. Write these names exactly like this: ${glossary()}. Answer with the tool.`,
