@@ -57,6 +57,27 @@ function ownerMenu(day: Day): string {
     + (forgets ? `<p class="menu-label">Forget a session</p>${forgets}` : '') + `</div></details>`;
 }
 
+const dayLink = (date: string, label: string) => `<button type="button" class="link-day" data-date="${e(date)}">${e(label)}</button>`;
+
+/** "Changed" badge on a reversal (both days linked, the old commits as work that may need undoing), small notes for the other links, and the follow-up state. */
+function changeNotes(d: Day['decisions'][number]): string {
+  const parts: string[] = [];
+  if (d.change) {
+    const steps = d.change.from.map(f => `<li>${dayLink(f.date, shortDate(f.date))} <span class="chg-what">${e(f.what)}</span></li>`).join('');
+    const undo = d.change.commits.slice(0, MAX_COMMITS_PER_DECISION);
+    parts.push(`<div class="changed"><p class="changed-head"><span class="badge badge-changed">Changed</span> You changed your mind. Earlier you decided:</p><ol class="chg-steps">${steps}</ol>`
+      + (undo.length ? `<p class="chg-undo">Work that may need undoing</p><div class="d-commits">${undo.map(commitTag).join('')}</div>` : '') + `</div>`);
+  }
+  if (d.changedLater) parts.push(`<p class="d-note"><span class="badge badge-changed">Changed later</span> ${dayLink(d.changedLater.date, shortDate(d.changedLater.date))}</p>`);
+  if (d.refines) parts.push(`<p class="d-note"><span class="badge badge-refines">Refines</span> an earlier decision from ${dayLink(d.refines.date, shortDate(d.refines.date))}</p>`);
+  if (d.followUp) {
+    const closed = d.followUp.status === 'closed';
+    parts.push(`<p class="d-note follow-up ${closed ? 'closed' : 'open'}"><span class="badge ${closed ? 'badge-closed' : 'badge-open'}">${closed ? 'Follow-up closed' : 'Follow-up open'}</span> ${e(d.followUp.text)}</p>`
+      + (closed && d.followUp.closedBy ? `<div class="d-commits">${commitTag(d.followUp.closedBy)}</div>` : ''));
+  }
+  return parts.join('');
+}
+
 function decisionItem(d: Day['decisions'][number], bySha: Map<string, CommitRef>, topics: Map<string, string>, priv: boolean): string {
   const original = priv && 'quoteOriginal' in d && typeof d.quoteOriginal === 'string' && d.quoteOriginal.trim() && d.quoteOriginal !== d.quote
     ? `<details class="original"><summary>Show original</summary><p>${e(d.quoteOriginal)}</p></details>` : '';
@@ -64,6 +85,7 @@ function decisionItem(d: Day['decisions'][number], bySha: Map<string, CommitRef>
   const topic = topics.get(d.sessionId);
   return `<li class="decision"><div class="d-rail"><time datetime="${e(d.at)}">${e(time(d.at))}</time>${topic ? `<span class="d-session">${e(topic)}</span>` : ''}</div>`
     + `<div class="d-body"><h3 class="d-what">${e(d.what)}</h3>`
+    + changeNotes(d)
     + `<p class="d-why"><span class="why-mark">Why</span><span class="why-text">${e(d.why)}</span></p>`
     + `<p class="d-quote">“${e(d.quote)}” <span class="d-at">heard at ${e(time(d.at))}</span></p>${original}`
     + (commits.length ? `<div class="d-commits">${commits.map(commitTag).join('')}</div>` : '') + `</div></li>`;

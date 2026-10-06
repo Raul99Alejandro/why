@@ -29,3 +29,24 @@ export async function commitsOn(day: string, repos: string[], timeZone: string, 
   }
   return out.sort((a, b) => a.at.localeCompare(b.at));
 }
+
+/** Public commits of the given repos from a local day until now, in one request per repo (at most 100 per repo: plenty for a few days). */
+export async function commitsSince(day: string, repos: string[], timeZone: string, fetchFn: typeof fetch = fetch): Promise<CommitRef[]> {
+  const since = new Date(`${day}T00:00:00Z`); since.setUTCDate(since.getUTCDate() - 1);
+  const out: CommitRef[] = [];
+  for (const repo of repos) {
+    if (!repoRegex.test(repo)) continue;
+    try {
+      const res = await fetchFn(`https://api.github.com/repos/${repo}/commits?since=${since.toISOString()}&per_page=100`, { headers: { accept: 'application/vnd.github+json', 'user-agent': 'why-app' } });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      for (const c of await res.json() as Array<{ sha: string; html_url: string; commit: { message: string; author: { date: string } } }>) {
+        const at = new Date(c.commit.author.date).toISOString();
+        if (localDay(at, timeZone) < day) continue;
+        out.push({ repo, sha: c.sha.slice(0, 7), message: c.commit.message.split('\n')[0]!, url: c.html_url, at });
+      }
+    } catch (err) {
+      log({ level: 'warn', msg: 'github_unavailable', repo, error: (err as Error).message });
+    }
+  }
+  return out.sort((a, b) => a.at.localeCompare(b.at));
+}

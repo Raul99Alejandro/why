@@ -1,4 +1,4 @@
-import type { DayLog, PublishedDay } from './domain/types.js';
+import type { DayDecision, DayLog, PublishedDay } from './domain/types.js';
 import { redact } from './redact.js';
 import type { Store } from './store/store.js';
 
@@ -14,7 +14,7 @@ export async function publishDay(opts: { store: Store; day: string; excludeSessi
     date: log.date,
     summary: redact(log.summary),
     sessions,
-    decisions: decisions.map(({ quoteOriginal: _hidden, ...d }) => ({ ...d, what: redact(d.what), why: redact(d.why), quote: redact(d.quote) })),
+    decisions: decisions.map(({ quoteOriginal: _hidden, ...d }) => withLinks({ ...d, what: redact(d.what), why: redact(d.why), quote: redact(d.quote) }, keep)),
     todos: log.todos.filter(t => keep(t.sessionId)).map(t => ({ ...t, text: redact(t.text) })),
     openQuestions: log.openQuestions.filter(q => keep(q.sessionId)).map(q => ({ ...q, text: redact(q.text) })),
     commits: log.commits.filter(c => referenced.has(c.sha)).map(c => ({ ...c, message: redact(c.message) })),
@@ -28,10 +28,26 @@ export async function publishDay(opts: { store: Store; day: string; excludeSessi
   return pub;
 }
 
+/** Texts that came from other decisions (the old side of a change, a follow-up step) are cleaned like the rest; an excluded session never shows through a link. */
+function withLinks<T extends Omit<DayDecision, 'quoteOriginal'>>(d: T, keep: (sessionId: string) => boolean): T {
+  const out: T = { ...d };
+  if (d.change) {
+    const from = d.change.from.filter(f => keep(f.sessionId)).map(f => ({ ...f, what: redact(f.what) }));
+    if (from.length && from[0]!.id === d.change.from[0]!.id) out.change = { from, commits: d.change.commits.map(c => ({ ...c, message: redact(c.message) })) };
+    else delete out.change;
+  }
+  if (d.followUp) out.followUp = { ...d.followUp, text: redact(d.followUp.text), ...(d.followUp.closedBy ? { closedBy: { ...d.followUp.closedBy, message: redact(d.followUp.closedBy.message) } } : {}) };
+  return out;
+}
+
 function slotsOf(pub: PublishedDay): [object, string][] {
   return [
     [pub, 'summary'], ...pub.sessions.map(s => [s, 'topic'] as [object, string]),
     ...pub.decisions.flatMap(d => (['what', 'why', 'quote'] as const).map(k => [d, k] as [object, string])),
+    ...pub.decisions.flatMap(d => [
+      ...(d.change?.from ?? []).map(f => [f, 'what'] as [object, string]), ...(d.change?.commits ?? []).map(c => [c, 'message'] as [object, string]),
+      ...(d.followUp ? [[d.followUp, 'text'] as [object, string]] : [])
+    ]),
     ...pub.todos.map(t => [t, 'text'] as [object, string]), ...pub.openQuestions.map(q => [q, 'text'] as [object, string]),
     ...pub.commits.map(c => [c, 'message'] as [object, string])
   ];
@@ -57,6 +73,7 @@ export async function unpublishDay(store: Store, day: string): Promise<void> { a
 export async function forgetSession(opts: { store: Store; sessionId: string; recompile: (day: string) => Promise<DayLog | null> }): Promise<{ day: string | null }> {
   const day = await opts.store.forgetSession(opts.sessionId);
   if (!day) return { day: null };
+  await scrubLinks(opts.store, opts.sessionId);
   const published = await opts.store.getPublished(day);
   await opts.recompile(day);
   if (published) {
@@ -75,4 +92,28 @@ export async function forgetSession(opts: { store: Store; sessionId: string; rec
     }
   }
   return { day };
+}
+
+/** Removes every link to a forgotten session (text of its decisions and its ids) from the other days, private and published, without rebuilding them. */
+async function scrubLinks(store: Store, sessionId: string): Promise<void> {
+  const mine = (id: string) => id.startsWith(`${sessionId}#`);
+  const scrub = <T extends Pick<DayDecision, 'change' | 'changedLater' | 'refines'>>(d: T): T => {
+    const out: T = { ...d };
+    if (d.change) {
+      const cut = d.change.from.findIndex(f => f.sessionId === sessionId);
+      const from = cut < 0 ? d.change.from : d.change.from.slice(0, cut);
+      if (cut === 0 || from.length === 0) delete out.change; else if (cut > 0) out.change = { ...d.change, from };
+    }
+    if (d.changedLater && mine(d.changedLater.id)) delete out.changedLater;
+    if (d.refines && mine(d.refines.id)) delete out.refines;
+    return out;
+  };
+  for (const date of await store.listDays()) {
+    const log = await store.getDay(date);
+    if (log && log.decisions.some(d => d.change || d.changedLater || d.refines)) await store.putDay({ ...log, decisions: log.decisions.map(scrub) });
+  }
+  for (const date of await store.listPublished()) {
+    const pub = await store.getPublished(date);
+    if (pub && pub.decisions.some(d => d.change || d.changedLater || d.refines)) await store.putPublished({ ...pub, decisions: pub.decisions.map(scrub) });
+  }
 }

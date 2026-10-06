@@ -20,7 +20,7 @@ describe('runSync', () => {
   it('collects, analyzes and compiles the day in one run', async () => {
     const store = new MemoryStore();
     const out = await runSync({ source, store, converse: converse as never, repos: [], timeZone: 'America/Mexico_City', now: new Date('2026-10-04T00:00:00Z') });
-    expect(out).toEqual({ saved: 1, analyzed: 1, failed: 0, ignoredPersonal: 0, ignoredOffHours: 0, classifyFailed: 0, classifyGaveUp: 0, days: ['2026-10-03'] });
+    expect(out).toEqual({ saved: 1, analyzed: 1, failed: 0, ignoredPersonal: 0, ignoredOffHours: 0, classifyFailed: 0, classifyGaveUp: 0, reversals: 0, refinements: 0, restatements: 0, todosCreated: 0, alertsCreated: 0, followUpsCreated: 0, todosClosed: 0, judgeFailed: 0, beeFailed: 0, days: ['2026-10-03'] });
     expect((await store.getDay('2026-10-03'))!.summary).toBe('Day');
   });
 });

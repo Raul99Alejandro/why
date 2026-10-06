@@ -98,6 +98,21 @@ export function storeContract(name: string, make: () => Promise<Store>): void {
       expect(await s.listSessionsOn('2026-10-03')).toEqual([]);
     });
 
+    it('keeps decision records per day and deletes them with their session', async () => {
+      const s = await make();
+      const rec = (id: string, sessionId: string, day: string) => ({ id, sessionId, day, at: `${day}T18:00:00.000Z` });
+      await s.putSession(session('a'), '2026-10-03', 9_999_999_999);
+      await s.putDecisionRecord({ ...rec('a#0', 'a', '2026-10-03'), relation: { kind: 'reversal', priorId: 'z#0', priorDay: '2026-10-01' }, alert: { state: 'done', todoId: '7' } });
+      await s.putDecisionRecord({ ...rec('a#1', 'a', '2026-10-03'), followUp: { state: 'open', text: 'Do it', todoId: '8', checked: [] } });
+      await s.putDecisionRecord(rec('b#0', 'b', '2026-10-03'));
+      await s.putDecisionRecord({ ...rec('a#1', 'a', '2026-10-03'), followUp: { state: 'closed', text: 'Do it', todoId: '8', checked: ['c1'] } }); // overwrite
+      expect((await s.listDecisionRecords('2026-10-03')).map((r) => r.id).sort()).toEqual(['a#0', 'a#1', 'b#0']);
+      expect((await s.listDecisionRecords('2026-10-03')).find((r) => r.id === 'a#1')!.followUp!.state).toBe('closed');
+      expect(await s.listDecisionRecords('2026-10-04')).toEqual([]);
+      await s.forgetSession('a');
+      expect((await s.listDecisionRecords('2026-10-03')).map((r) => r.id)).toEqual(['b#0']);
+    });
+
     it('forgets a session completely', async () => {
       const s = await make();
       await s.putSession(session('a'), '2026-10-03', 9_999_999_999);

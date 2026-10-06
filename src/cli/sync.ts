@@ -1,5 +1,6 @@
 import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
 import { CliBeeSource } from '../bee/cli.js';
+import { CliBeeTodos } from '../bee/todos.js';
 import { bedrockConverse } from '../nova.js';
 import { runSync } from '../runtime.js';
 import { DynamoStore } from '../store/dynamo.js';
@@ -11,7 +12,8 @@ const workHours = readWorkHours();
 const out = await runSync({
   source: new CliBeeSource(), store: new DynamoStore(table, { region }),
   converse: bedrockConverse(new BedrockRuntimeClient({ region }), process.env.MODEL_ID ?? 'us.amazon.nova-2-lite-v1:0'),
-  repos: (process.env.REPOS ?? 'Raul99Alejandro/counterpart,Raul99Alejandro/why').split(','), timeZone: workHours.timeZone, workHours, now: new Date()
+  repos: (process.env.REPOS ?? 'Raul99Alejandro/counterpart,Raul99Alejandro/why').split(','), timeZone: workHours.timeZone, workHours, now: new Date(),
+  todos: new CliBeeTodos(), backfill: process.argv.includes('--backfill')
 });
 // Counts only: never print conversation text.
 console.log(JSON.stringify(out));

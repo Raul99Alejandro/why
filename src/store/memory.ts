@@ -1,5 +1,5 @@
 import type { Analysis, DayLog, PublishedDay, Session, SessionState } from '../domain/types.js';
-import type { IgnoredKind, SessionRecord, Store } from './store.js';
+import type { DecisionRecord, IgnoredKind, SessionRecord, Store } from './store.js';
 
 export class MemoryStore implements Store {
   private sessions = new Map<string, SessionRecord>();
@@ -109,10 +109,21 @@ export class MemoryStore implements Store {
     this.published.delete(date);
   }
 
+  private decisions = new Map<string, DecisionRecord>();
+
+  async putDecisionRecord(record: DecisionRecord) {
+    this.decisions.set(record.id, structuredClone(record));
+  }
+
+  async listDecisionRecords(day: string) {
+    return [...this.decisions.values()].filter((d) => d.day === day).map((d) => structuredClone(d));
+  }
+
   async forgetSession(id: string) {
     const r = this.sessions.get(id);
     if (!r) return null;
     this.sessions.delete(id);
+    for (const [k, d] of this.decisions) if (d.sessionId === id) this.decisions.delete(k);
     return r.day;
   }
 }

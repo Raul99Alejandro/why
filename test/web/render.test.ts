@@ -131,4 +131,22 @@ describe('work filter counter', () => {
     expect(dayHtml({ ...day, ignoredPersonal: 1 }, { private: false })).toContain('1 personal conversation ignored');
     expect(dayHtml(day, { private: true })).not.toContain('ignored');
   });
+
+  it('shows a changed badge linking both days with the old commits, and the follow-up state', () => {
+    const d = { ...day.decisions[0]!, id: 's1#0',
+      change: { from: [{ id: 'x#0', date: '2026-10-01', what: 'Use <b>Nova</b>', sessionId: 'x' }, { id: 'y#0', date: '2026-09-28', what: 'Use Titan', sessionId: 'y' }], commits: [commit('old1111', 'feat: Nova voice')] },
+      changedLater: { id: 'z#0', date: '2026-10-05' }, refines: { id: 'w#0', date: '2026-10-02' },
+      followUp: { text: 'Record the demo', status: 'closed' as const, closedBy: commit('fix2222', 'feat: demo') } };
+    const html = dayHtml({ ...day, decisions: [d] }, { private: true });
+    expect(html).toContain('badge-changed">Changed<');
+    expect(html).toMatch(/data-date="2026-10-01"[^>]*>Oct 1</); expect(html).toMatch(/data-date="2026-09-28"/);
+    expect(html).toContain('Use &lt;b&gt;Nova&lt;/b&gt;'); expect(html).not.toContain('<b>Nova');
+    expect(html).toContain('Work that may need undoing'); expect(html).toContain('old1111');
+    expect(html).toMatch(/Changed later<\/span> <button[^>]*data-date="2026-10-05"/);
+    expect(html).toMatch(/Refines<\/span>/);
+    expect(html).toContain('Follow-up closed'); expect(html).toContain('fix2222');
+    const open = dayHtml({ ...day, decisions: [{ ...day.decisions[0]!, followUp: { text: 'Record the demo', status: 'open' } }] }, { private: false });
+    expect(open).toContain('Follow-up open'); expect(open).not.toContain('Work that may need undoing');
+    expect(dayHtml(day, { private: true })).not.toContain('badge');
+  });
 });

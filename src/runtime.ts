@@ -1,5 +1,7 @@
 import { analyzePending } from './analyze.js';
 import type { BeeSource } from './bee/source.js';
+import type { BeeTodos } from './bee/todos.js';
+import { reconcile, windowDays, type LedgerResult } from './ledger.js';
 import { collect } from './collect.js';
 import { compileDay } from './compile.js';
 import type { DayLog } from './domain/types.js';
@@ -30,7 +32,7 @@ export function recompiler(deps: { store: Store; converse: ConverseFn; repos: st
 /** The day log is rebuilt at most this often when nothing new arrived (commits can land any time; the sync runs every 5 minutes). */
 export const TODAY_REFRESH_MS = 30 * 60_000;
 
-export async function runSync(deps: { source: BeeSource; store: Store; converse: ConverseFn; repos: string[]; timeZone: string; now: Date; fetchFn?: typeof fetch; workHours?: WorkHours }) {
+export async function runSync(deps: { source: BeeSource; store: Store; converse: ConverseFn; repos: string[]; timeZone: string; now: Date; fetchFn?: typeof fetch; workHours?: WorkHours; todos?: BeeTodos; backfill?: boolean }) {
   const workHours = deps.workHours ?? readWorkHours({ ...process.env, TIME_ZONE: deps.timeZone });
   const collected = await collect({
     source: deps.source, store: deps.store, timeZone: deps.timeZone, now: deps.now, workHours,
@@ -49,10 +51,27 @@ export async function runSync(deps: { source: BeeSource; store: Store; converse:
     const current = await deps.store.getDay(today);
     if (!current || deps.now.getTime() - Date.parse(current.updatedAt) >= TODAY_REFRESH_MS) days.add(today);
   }
-  for (const day of days) await compileDay({ day, store: deps.store, converse: deps.converse, repos: deps.repos, timeZone: deps.timeZone, now: deps.now, fetchFn: deps.fetchFn });
+  // Reversals, refinements and Bee todos. A Bee failure only leaves writes pending; it must never stop the sync.
+  const today2 = today;
+  let ledger: LedgerResult | null = null;
+  try {
+    ledger = await reconcile({
+      store: deps.store, converse: deps.converse, ...(deps.todos ? { todos: deps.todos } : {}), repos: deps.repos, timeZone: deps.timeZone, now: deps.now, fetchFn: deps.fetchFn,
+      days: deps.backfill ? windowDays(today2) : [...days]
+    });
+    for (const d of ledger.affectedDays) days.add(d);
+    if (deps.backfill) for (const d of windowDays(today2)) if (await deps.store.getDay(d)) days.add(d);
+  } catch (err) {
+    log({ level: 'error', msg: 'ledger_failed', error: (err as Error).name });
+  }
+  // Oldest first: a day that links back to an older one reads that day's finished log.
+  for (const day of [...days].sort()) await compileDay({ day, store: deps.store, converse: deps.converse, repos: deps.repos, timeZone: deps.timeZone, now: deps.now, fetchFn: deps.fetchFn });
   const out = {
     saved: collected.saved.length, analyzed: analyzed.length, failed: failed.length,
     ignoredPersonal: collected.ignoredPersonal, ignoredOffHours: collected.ignoredOffHours, classifyFailed: collected.classifyFailed.length, classifyGaveUp: collected.classifyGaveUp.length,
+    reversals: ledger?.reversals ?? 0, refinements: ledger?.refinements ?? 0, restatements: ledger?.restatements ?? 0,
+    todosCreated: (ledger?.alertsCreated ?? 0) + (ledger?.followUpsCreated ?? 0), alertsCreated: ledger?.alertsCreated ?? 0, followUpsCreated: ledger?.followUpsCreated ?? 0, todosClosed: ledger?.followUpsClosed ?? 0,
+    judgeFailed: ledger?.judgeFailed ?? 0, beeFailed: ledger?.beeFailed ?? 0,
     days: [...days].sort()
   };
   log({ level: 'info', msg: 'sync', ...out, waiting: collected.skippedCapturing.length });

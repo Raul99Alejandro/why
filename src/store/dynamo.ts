@@ -9,7 +9,7 @@ import {
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { Analysis, DayLog, PublishedDay, Session, SessionState } from '../domain/types.js';
-import type { IgnoredKind, SessionRecord, Store } from './store.js';
+import type { DecisionRecord, IgnoredKind, SessionRecord, Store } from './store.js';
 
 /** Creates the single table (for DynamoDB Local in tests; on AWS the stack creates it). */
 export async function createTable(table: string, endpoint: string): Promise<void> {
@@ -321,6 +321,20 @@ export class DynamoStore implements Store {
     return (out.Items ?? []).map((i) => (i.pk as string).slice(prefix.length)).sort().reverse();
   }
 
+  // Decision records live under their day (pk DEC#<day>) so a window of days is a few Query calls, never a Scan.
+  async putDecisionRecord(record: DecisionRecord) {
+    await this.doc.send(
+      new PutCommand({
+        TableName: this.table,
+        Item: { pk: `DEC#${record.day}`, sk: `D#${record.id}`, record },
+      })
+    );
+  }
+
+  async listDecisionRecords(day: string) {
+    return (await this.query(`DEC#${day}`, 'D#')).map((i) => i.record as DecisionRecord);
+  }
+
   async forgetSession(id: string) {
     const meta = await this.get<{ day: string }>(`SESSION#${id}`, 'META');
     if (!meta) return null;
@@ -338,6 +352,10 @@ export class DynamoStore implements Store {
         Key: { pk: `DAY#${meta.day}`, sk: `SESSION#${id}` },
       })
     );
+    for (const r of await this.listDecisionRecords(meta.day)) {
+      if (r.sessionId !== id) continue;
+      await this.doc.send(new DeleteCommand({ TableName: this.table, Key: { pk: `DEC#${meta.day}`, sk: `D#${r.id}` } }));
+    }
     return meta.day;
   }
 }

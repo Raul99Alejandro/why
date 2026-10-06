@@ -1,4 +1,4 @@
-import type { Analysis, DayLog, PublishedDay, Session, SessionState } from '../domain/types.js';
+import type { Analysis, CommitRef, DayLog, PublishedDay, Session, SessionState } from '../domain/types.js';
 
 export interface SessionRecord {
   session: Session;
@@ -6,6 +6,20 @@ export interface SessionRecord {
   day: string;
   analysis: Analysis | null;
 }
+
+/**
+ * What Why knows about one analyzed decision beyond its text: how it relates to earlier ones and which Bee todos it owns.
+ * It holds ids and short follow-up wording only (the follow-up step is Why's own sentence), never transcript text.
+ * Its presence means "already judged": a decision is never judged, alerted or turned into a todo twice.
+ */
+export type DecisionRecord = {
+  id: string; sessionId: string; day: string; at: string;
+  relation?: { kind: 'reversal' | 'refinement' | 'restatement'; priorId: string; priorDay: string };
+  /** Reversal alert in Bee: pending until the CLI call succeeded, then done with the Bee todo id. 'skipped' for old decisions. */
+  alert?: { state: 'pending' | 'done' | 'skipped'; todoId?: string };
+  /** Follow-up todo: pending (to create) -> open (in Bee) -> closing (matched, Bee completion to retry) -> closed. */
+  followUp?: { state: 'pending' | 'open' | 'closing' | 'closed' | 'skipped'; text: string; todoId?: string; checked: string[]; closedBy?: CommitRef };
+};
 
 export type IgnoredKind = 'personal' | 'offHours' | 'unclassified';
 
@@ -33,6 +47,9 @@ export interface Store {
   getPublished(date: string): Promise<PublishedDay | null>;
   listPublished(): Promise<string[]>;
   deletePublished(date: string): Promise<void>;
-  /** Deletes every record of a session (META, RAW, ANALYSIS, its DAY# reference). Returns its day, or null. */
+  putDecisionRecord(record: DecisionRecord): Promise<void>;
+  /** Every decision record of a local day (any order). */
+  listDecisionRecords(day: string): Promise<DecisionRecord[]>;
+  /** Deletes every record of a session (META, RAW, ANALYSIS, its DAY# reference, its decision records). Returns its day, or null. */
   forgetSession(id: string): Promise<string | null>;
 }

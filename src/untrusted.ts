@@ -4,5 +4,5 @@
  * harmless look-alike, so the text cannot close the block early and pose as instructions.
  */
 export function neutralizeTags(text: string): string {
-  return text.replace(/<(\/?\s*)(transcript|question)/gi, '‹$1$2');
+  return text.replace(/<(\/?\s*)(transcript|question|prior|current|step|commit)/gi, '‹$1$2');
 }
