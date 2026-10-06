@@ -9,7 +9,7 @@ import {
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { Analysis, DayLog, PublishedDay, Session, SessionState } from '../domain/types.js';
-import type { SessionRecord, Store } from './store.js';
+import type { IgnoredKind, SessionRecord, Store } from './store.js';
 
 /** Creates the single table (for DynamoDB Local in tests; on AWS the stack creates it). */
 export async function createTable(table: string, endpoint: string): Promise<void> {
@@ -122,6 +122,39 @@ export class DynamoStore implements Store {
       throw err;
     }
     return true;
+  }
+
+  // A discarded segment leaves two small items: a marker by id (so a re-seen conversation is not counted twice)
+  // and a reference under its day (for the per-day counter). Neither holds any conversation text.
+  async recordIgnored(day: string, sessionId: string, kind: IgnoredKind): Promise<boolean> {
+    try {
+      await this.doc.send(
+        new PutCommand({
+          TableName: this.table,
+          ConditionExpression: 'attribute_not_exists(pk)',
+          Item: { pk: `IGNORED#${sessionId}`, sk: 'IGN', day, kind },
+        })
+      );
+    } catch (err) {
+      if ((err as { name?: string }).name === 'ConditionalCheckFailedException') return false;
+      throw err;
+    }
+    await this.doc.send(
+      new PutCommand({
+        TableName: this.table,
+        Item: { pk: `DAY#${day}`, sk: `IGNORED#${sessionId}`, kind },
+      })
+    );
+    return true;
+  }
+
+  async isIgnored(sessionId: string): Promise<boolean> {
+    return (await this.get(`IGNORED#${sessionId}`, 'IGN')) !== null;
+  }
+
+  async ignoredCounts(day: string) {
+    const items = await this.query(`DAY#${day}`, 'IGNORED#');
+    return { personal: items.filter((i) => i.kind === 'personal').length, offHours: items.filter((i) => i.kind === 'offHours').length };
   }
 
   async getSession(id: string): Promise<SessionRecord | null> {

@@ -47,6 +47,7 @@ export async function compileDay(opts: { day: string; store: Store; converse: Co
     user: records.map(r => `- ${r.analysis!.topic}: ${r.analysis!.summary}`).join('\n'),
     name: 'save_day_summary', description: 'Save the headline of the day.', schema: json(summarySchema)
   }).catch(() => null));
+  const ignored = await opts.store.ignoredCounts(opts.day);
   const log: DayLog = {
     date: opts.day,
     summary: summaryOut.success ? summaryOut.data.summary : records.map(r => r.analysis!.topic).join(' · '),
@@ -55,6 +56,7 @@ export async function compileDay(opts: { day: string; store: Store; converse: Co
     todos: records.flatMap(r => r.analysis!.todos.map(text => ({ text, sessionId: r.session.id }))),
     openQuestions: records.flatMap(r => r.analysis!.openQuestions.map(text => ({ text, sessionId: r.session.id }))),
     commits,
+    ...(ignored.personal > 0 ? { ignoredPersonal: ignored.personal } : {}),
     updatedAt: opts.now.toISOString()
   };
   await opts.store.putDay(log);

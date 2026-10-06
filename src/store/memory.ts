@@ -1,5 +1,5 @@
 import type { Analysis, DayLog, PublishedDay, Session, SessionState } from '../domain/types.js';
-import type { SessionRecord, Store } from './store.js';
+import type { IgnoredKind, SessionRecord, Store } from './store.js';
 
 export class MemoryStore implements Store {
   private sessions = new Map<string, SessionRecord>();
@@ -24,6 +24,23 @@ export class MemoryStore implements Store {
       analysis: null,
     });
     return true;
+  }
+
+  private ignored = new Map<string, { day: string; kind: IgnoredKind }>();
+
+  async recordIgnored(day: string, sessionId: string, kind: IgnoredKind) {
+    if (this.ignored.has(sessionId)) return false;
+    this.ignored.set(sessionId, { day, kind });
+    return true;
+  }
+
+  async isIgnored(sessionId: string) {
+    return this.ignored.has(sessionId);
+  }
+
+  async ignoredCounts(day: string) {
+    const all = [...this.ignored.values()].filter((i) => i.day === day);
+    return { personal: all.filter((i) => i.kind === 'personal').length, offHours: all.filter((i) => i.kind === 'offHours').length };
   }
 
   async getSession(id: string) {

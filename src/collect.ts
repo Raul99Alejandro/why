@@ -2,8 +2,18 @@ import type { BeeConversation, BeeSource } from './bee/source.js';
 import { localDay } from './domain/dates.js';
 import type { Session, Utterance } from './domain/types.js';
 import type { Store } from './store/store.js';
+import { log } from './log.js';
+import { segmentOutcome, trimToHours, type SegmentLabel, type WorkHours } from './workfilter.js';
 
-export interface CollectResult { saved: string[]; skippedCapturing: string[]; cursor: string }
+export interface CollectResult {
+  saved: string[]; skippedCapturing: string[]; cursor: string;
+  /** Segments discarded in this run (counts only). */
+  ignoredPersonal: number; ignoredOffHours: number;
+  /** Segments the classifier could not judge: not stored, retried next run. */
+  classifyFailed: string[];
+  /** Days whose ignored counters changed. */
+  ignoredDays: string[];
+}
 const RAW_TTL_SECONDS = 30 * 24 * 3600;
 /** A longer pause between utterances starts a new session. */
 export const GAP_MS = 20 * 60_000;
@@ -54,26 +64,58 @@ export function splitSessions(conv: BeeConversation, now: Date): { session: Sess
   });
 }
 
-/** Brings finished Bee sessions into the store. A session still recording keeps the cursor where it was. */
-export async function collect(opts: { source: BeeSource; store: Store; timeZone: string; now: Date }): Promise<CollectResult> {
+/**
+ * Brings finished Bee sessions into the store through the work filter (W-01): what was said outside work hours is cut,
+ * then one classifier call per finished segment decides work or personal. Only work is stored; the rest leaves a count.
+ * A session still recording, or one the classifier could not judge, keeps the cursor where it was.
+ */
+export async function collect(opts: {
+  source: BeeSource; store: Store; timeZone: string; now: Date;
+  workHours: WorkHours;
+  /** Null means the classifier failed: the segment stays pending. */
+  classify: (session: Session) => Promise<SegmentLabel | null>;
+}): Promise<CollectResult> {
   const previous = await opts.store.getCursor();
   const { ids, nextCursor } = await opts.source.changedSince(previous?.cursor ?? null);
   const saved: string[] = [];
   const skippedCapturing: string[] = [];
+  const classifyFailed: string[] = [];
+  const ignoredDays = new Set<string>();
+  let ignoredPersonal = 0;
+  let ignoredOffHours = 0;
   for (const id of ids) {
     const c = await opts.source.conversation(id);
     for (const { session, finished } of splitSessions(c, opts.now)) {
       if (!finished) { skippedCapturing.push(session.id); continue; }
       if (session.utterances.length === 0) continue;
-      const created = await opts.store.putSession(
-        session,
-        localDay(session.startedAt, opts.timeZone),
-        Math.floor(opts.now.getTime() / 1000) + RAW_TTL_SECONDS
-      );
-      if (created) saved.push(session.id);
+      // A conversation seen again (the cursor was held back) is not judged or counted twice.
+      if (await opts.store.getSession(session.id) || await opts.store.isIgnored(session.id)) continue;
+      const kept = trimToHours(session, opts.workHours);
+      const label = kept ? await opts.classify(kept) : null;
+      const outcome = segmentOutcome(kept !== null, label);
+      if (outcome === 'ignoredOffHours' || outcome === 'ignoredPersonal') {
+        const day = localDay(session.startedAt, opts.timeZone);
+        const kind = outcome === 'ignoredPersonal' ? 'personal' : 'offHours';
+        if (await opts.store.recordIgnored(day, session.id, kind)) {
+          if (kind === 'personal') ignoredPersonal++; else ignoredOffHours++;
+          ignoredDays.add(day);
+        }
+      } else if (outcome === 'pending') {
+        classifyFailed.push(session.id);
+      } else {
+        const stored = kept!;
+        const created = await opts.store.putSession(
+          stored,
+          localDay(stored.startedAt, opts.timeZone),
+          Math.floor(opts.now.getTime() / 1000) + RAW_TTL_SECONDS
+        );
+        if (created) saved.push(stored.id);
+      }
     }
   }
-  const cursor = skippedCapturing.length > 0 || !nextCursor ? (previous?.cursor ?? '') : nextCursor;
+  const hold = skippedCapturing.length > 0 || classifyFailed.length > 0 || !nextCursor;
+  const cursor = hold ? (previous?.cursor ?? '') : nextCursor;
   await opts.store.setCursor(cursor, opts.now.toISOString());
-  return { saved, skippedCapturing, cursor };
+  log({ level: 'info', msg: 'work_filter', stored: saved.length, ignoredPersonal, ignoredOffHours, classifyFailed: classifyFailed.length });
+  return { saved, skippedCapturing, cursor, ignoredPersonal, ignoredOffHours, classifyFailed, ignoredDays: [...ignoredDays].sort() };
 }

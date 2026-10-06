@@ -18,6 +18,7 @@ export async function publishDay(opts: { store: Store; day: string; excludeSessi
     todos: log.todos.filter(t => keep(t.sessionId)).map(t => ({ ...t, text: redact(t.text) })),
     openQuestions: log.openQuestions.filter(q => keep(q.sessionId)).map(q => ({ ...q, text: redact(q.text) })),
     commits: log.commits.filter(c => referenced.has(c.sha)).map(c => ({ ...c, message: redact(c.message) })),
+    ...(log.ignoredPersonal ? { ignoredPersonal: log.ignoredPersonal } : {}),
     updatedAt: log.updatedAt,
     publishedAt: opts.now.toISOString()
   };

@@ -1,0 +1,36 @@
+id: W-01
+rule: A work session is stored only if it falls inside the configured work hours and is classified as work; anything else is discarded and only a per-day counter is kept.
+status: approved
+kind: deterministic
+source: "owner, chat 2026-10-06 (work hours + AI classification per finished session segment)"
+examples:
+  - id: W-01-a
+    status: approved
+    given: { hours: { days: [1, 2, 3, 4, 5, 6], start: "09:00", end: "20:00", timeZone: America/Mexico_City }, session: { startedAt: "2026-10-05T16:00:00.000Z", endedAt: "2026-10-05T16:20:00.000Z" }, label: work }
+    when: { filter: true }
+    then: { outcome: stored }
+  - id: W-01-b
+    status: approved
+    given: { hours: { days: [1, 2, 3, 4, 5, 6], start: "09:00", end: "20:00", timeZone: America/Mexico_City }, session: { startedAt: "2026-10-06T03:30:00.000Z", endedAt: "2026-10-06T03:50:00.000Z" }, label: work }
+    when: { filter: true }
+    then: { outcome: ignoredOffHours }
+  - id: W-01-c
+    status: approved
+    given: { hours: { days: [1, 2, 3, 4, 5, 6], start: "09:00", end: "20:00", timeZone: America/Mexico_City }, session: { startedAt: "2026-10-05T18:00:00.000Z", endedAt: "2026-10-05T18:20:00.000Z" }, label: personal }
+    when: { filter: true }
+    then: { outcome: ignoredPersonal }
+  - id: W-01-d
+    status: approved
+    given: { hours: { days: [1, 2, 3, 4, 5, 6], start: "09:00", end: "20:00", timeZone: America/Mexico_City }, session: { startedAt: "2026-10-05T18:00:00.000Z", endedAt: "2026-10-05T18:20:00.000Z" }, label: error }
+    when: { filter: true }
+    then: { outcome: pending }
+  - id: W-01-e
+    status: approved
+    given: { hours: { days: [1, 2, 3, 4, 5, 6], start: "09:00", end: "20:00", timeZone: America/Mexico_City }, session: { startedAt: "2026-10-04T18:00:00.000Z", endedAt: "2026-10-04T18:20:00.000Z" }, label: work }
+    when: { filter: true }
+    then: { outcome: ignoredOffHours }
+  - id: W-01-f
+    status: approved
+    given: { hours: { days: [1, 2, 3, 4, 5, 6], start: "09:00", end: "20:00", timeZone: America/Mexico_City }, utterancesAt: ["2026-10-06T01:50:00.000Z", "2026-10-06T02:05:00.000Z", "2026-10-06T02:15:00.000Z"] }
+    when: { trim: true }
+    then: { kept: 1 }

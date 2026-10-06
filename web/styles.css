@@ -95,6 +95,7 @@ body.demo .demo-badge { display: inline-flex; }
 .counters .zero b { color: var(--mist); font-weight: 500; }
 .hero-empty .summary { color: var(--paper); }
 .hint { margin-top: 8px; color: var(--mist); max-width: 56ch; }
+.ignored { margin-top: 10px; font-size: 0.8125rem; color: var(--mist); }
 
 /* Owner menu */
 .owner-menu { position: relative; flex: 0 0 auto; }

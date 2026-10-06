@@ -1,0 +1,26 @@
+id: W-02
+rule: A new decision is a reversal only if it directly contradicts an earlier decision on the same topic; a refinement is linked without an alert, and a restatement is neither a new decision nor a reversal.
+status: approved
+kind: judged
+source: "owner, chat 2026-10-06 (reversal = direct contradiction only)"
+examples:
+  - id: W-02-a
+    status: approved
+    given: { old: "Use Nova for the answers", new: "Use Claude Sonnet for the answers" }
+    when: { relate: true }
+    then: { relation: reversal }
+  - id: W-02-b
+    status: approved
+    given: { old: "Use Nova for the answers", new: "Use Nova with reasoning turned on" }
+    when: { relate: true }
+    then: { relation: refinement }
+  - id: W-02-c
+    status: approved
+    given: { old: "Use Nova for the answers", new: "As we said, we use Nova" }
+    when: { relate: true }
+    then: { relation: restatement }
+  - id: W-02-d
+    status: approved
+    given: { old: "Use Nova for the answers", new: "Ship the video on Friday" }
+    when: { relate: true }
+    then: { relation: unrelated }

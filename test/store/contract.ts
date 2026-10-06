@@ -85,6 +85,19 @@ export function storeContract(name: string, make: () => Promise<Store>): void {
       await s.deleteDay('2026-10-03');
     });
 
+    it('counts discarded segments once per id and per day', async () => {
+      const s = await make();
+      expect(await s.isIgnored('p1')).toBe(false);
+      expect(await s.recordIgnored('2026-10-03', 'p1', 'personal')).toBe(true);
+      expect(await s.recordIgnored('2026-10-03', 'p1', 'personal')).toBe(false);
+      await s.recordIgnored('2026-10-03', 'p2', 'offHours');
+      await s.recordIgnored('2026-10-04', 'p3', 'personal');
+      expect(await s.isIgnored('p1')).toBe(true);
+      expect(await s.ignoredCounts('2026-10-03')).toEqual({ personal: 1, offHours: 1 });
+      expect(await s.ignoredCounts('2026-10-05')).toEqual({ personal: 0, offHours: 0 });
+      expect(await s.listSessionsOn('2026-10-03')).toEqual([]);
+    });
+
     it('forgets a session completely', async () => {
       const s = await make();
       await s.putSession(session('a'), '2026-10-03', 9_999_999_999);

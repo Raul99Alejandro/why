@@ -124,3 +124,11 @@ describe('request signing helper', () => {
     expect(await sha256Hex('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
   });
 });
+
+describe('work filter counter', () => {
+  it('shows how many personal conversations were ignored, only when there are some', () => {
+    expect(dayHtml({ ...day, ignoredPersonal: 3 }, { private: true })).toContain('3 personal conversations ignored');
+    expect(dayHtml({ ...day, ignoredPersonal: 1 }, { private: false })).toContain('1 personal conversation ignored');
+    expect(dayHtml(day, { private: true })).not.toContain('ignored');
+  });
+});

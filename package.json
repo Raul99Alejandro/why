@@ -5,7 +5,9 @@
   "type": "module",
   "private": true,
   "license": "MIT",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -14,7 +16,8 @@
     "web:dev": "vite web",
     "web:build": "vite build web --outDir ../dist-web --emptyOutDir",
     "cdk": "cdk --app \"npx tsx infra/bin/app.ts\"",
-    "battery": "tsx scripts/battery.ts"
+    "battery": "tsx scripts/battery.ts",
+    "domain:check": "node scripts/check-domain.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1141.0",
@@ -35,6 +38,7 @@
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "vite": "^6.4.3",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.1",
+    "yaml": "^2.9.1"
   }
 }

@@ -39,7 +39,7 @@ npm run web:dev       # open http://localhost:5173/?mock and ?mock&demo
  Bee (Apple Watch)
         |  recordings
         v
- `bee` CLI on the owner's PC  --every 30 min-->  sessions (split at >20 min gaps,
+ `bee` CLI on the owner's PC  --every 5 min-->   sessions (split at >20 min gaps,
         |                                         finished after 30 min quiet)
         v
  Amazon Bedrock: Nova 2 Lite  (forced tool call + zod schema)
@@ -55,8 +55,9 @@ npm run web:dev       # open http://localhost:5173/?mock and ?mock&demo
  filtered copy (PUB#)  --->  demo page  (separate read-only Lambda; Ask + Polly)
 ```
 
-- **Collect on the owner's PC.** Bee's API uses a private certificate authority and the token lives in the OS credential store, so the collector (`src/collect.ts`, `src/cli/sync.ts`) runs locally with the `bee` CLI. A Windows scheduled task runs it every 30 minutes with a least-privilege IAM user. The Bee token never reaches AWS.
+- **Collect on the owner's PC.** Bee's API uses a private certificate authority and the token lives in the OS credential store, so the collector (`src/collect.ts`, `src/cli/sync.ts`) runs locally with the `bee` CLI. A Windows scheduled task runs it every 5 minutes with a least-privilege IAM user. The Bee token never reaches AWS.
 - **Sessions.** Each conversation is cut into sessions at pauses longer than 20 minutes; a session is processed once it has been quiet for 30 minutes.
+- **Work filter (W-01).** Bee listens all day, so Why filters before it stores anything. Speech outside the work hours (default Monday to Saturday, 09:00 to 20:00, `America/Mexico_City`; set `WORK_DAYS`, `WORK_START`, `WORK_END`, `TIME_ZONE` to change) is cut off, so a conversation that runs past 20:00 keeps only its working part. Each finished session segment inside the hours then gets one small classifier call (Nova 2 Lite, the segment text only) that answers work or personal. Personal and out-of-hours segments are never stored and never sent to the analysis model; only a per-day counter remains, shown on the page as "N personal conversations ignored". If the classifier fails, the segment is neither stored nor dropped: it waits and is retried on the next run. The rules and examples live in `domain/` (`npm run domain:check`).
 - **Analyze.** Amazon Nova 2 Lite on Bedrock reads one session with forced tool use; the reply must pass a zod schema (retried once). It returns decisions, the reason for each, a short quote, pending items and open questions, in English, from Spanish speech (`src/analyze.ts`).
 - **Compile and link.** Sessions are merged into a day log (`src/compile.ts`) and each decision is linked to up to three public GitHub commits from that time window (`src/github.ts`).
 - **Store.** DynamoDB with a customer-managed KMS key. Raw utterances carry a 30-day TTL; the log keeps only extracted decisions, reasons and short quotes.
@@ -135,7 +136,8 @@ Outputs include `SiteUrl`, `DemoUrl` (`SiteUrl?demo`), `UserPoolId`, `ClientId` 
 
 1. In the IAM console create an access key for the `SyncUserName` user. Save it only in the `why-sync` profile of `~/.aws/credentials`. Never commit it.
 2. Run once by hand to check it: `AWS_PROFILE=why-sync TABLE=<table name from cdk-outputs.local.json> npm run sync` (it prints counts only).
-3. Register the scheduled task (Windows, PowerShell, as your user): `powershell -File scripts/register-sync-task.ps1`. It runs "Why Bee sync" every 30 minutes while you are logged on and logs counts to `%LOCALAPPDATA%\why\sync.log`. Remove it with `scripts/unregister-sync-task.ps1`.
+3. Register the scheduled task (Windows, PowerShell, as your user): `powershell -File scripts/register-sync-task.ps1`. It runs "Why Bee sync" every 5 minutes while you are logged on and logs counts to `%LOCALAPPDATA%\why\sync.log`. Remove it with `scripts/unregister-sync-task.ps1`.
+   To change the schedule, edit `-RepetitionInterval` in `scripts/register-sync-task.ps1` and run it again (it replaces the existing task). The day log of today is rebuilt at most every 30 minutes when nothing new arrived, so the 5-minute run stays cheap.
 4. In the private site, review a day, preview the filtered copy, and publish it. Only then does it appear in the demo.
 
 The sync's repo list and time zone are set in `src/cli/sync.ts`; edit them for your own use.
@@ -160,6 +162,7 @@ src/
   store/                                           DynamoDB and in-memory stores
   handlers/                                        Lambda entry points (api, demo, sync)
   cli/sync.ts                                      the owner's local sync
+domain/                                            glossary and rules (work filter, reversals, follow-ups) with examples
 web/                                               browser UI (Vite, TypeScript), with a mock backend
 infra/                                             CDK app and the single stack (+ cdk-nag)
 scripts/                                           Windows scheduled-task scripts for the sync

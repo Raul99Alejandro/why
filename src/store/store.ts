@@ -7,11 +7,17 @@ export interface SessionRecord {
   analysis: Analysis | null;
 }
 
+export type IgnoredKind = 'personal' | 'offHours';
+
 export interface Store {
   getCursor(): Promise<{ cursor: string; syncedAt: string } | null>;
   setCursor(cursor: string, syncedAt: string): Promise<void>;
   /** Saves a finished session once. Returns false if it already existed (idempotent). */
   putSession(session: Session, day: string, rawTtlEpochSeconds: number): Promise<boolean>;
+  /** Remembers that a segment was discarded by the work filter (id and kind only, never its text). Returns false if it was already recorded. */
+  recordIgnored(day: string, sessionId: string, kind: IgnoredKind): Promise<boolean>;
+  isIgnored(sessionId: string): Promise<boolean>;
+  ignoredCounts(day: string): Promise<{ personal: number; offHours: number }>;
   getSession(id: string): Promise<SessionRecord | null>;
   setAnalysis(id: string, analysis: Analysis | null, state: SessionState): Promise<void>;
   listSessionsOn(day: string): Promise<SessionRecord[]>;

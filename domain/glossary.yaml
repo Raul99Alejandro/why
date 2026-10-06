@@ -1,0 +1,22 @@
+terms:
+  - term: Work session
+    definition: One stretch of a Bee conversation without a pause longer than 20 minutes. It is the unit that is filtered (work hours, then work/personal), stored and analyzed.
+    not_to_confuse_with: a Bee conversation (Bee can keep one conversation open for hours and append to it)
+    source: "design 2026-10-03; owner, chat 2026-10-06"
+  - term: Decision
+    definition: A choice between options or a commitment to a course of action, with the reason that was actually said. Status reports and descriptions of what exists are not decisions.
+    source: "design 2026-10-03"
+  - term: Refinement
+    definition: A later decision that narrows, extends or adds detail to an earlier decision on the same topic without contradicting it. It is linked to the earlier one; nobody is alerted.
+    not_to_confuse_with: Reversal
+    source: "owner, chat 2026-10-06"
+  - term: Reversal
+    definition: A later decision that directly contradicts an earlier one on the same topic, so both cannot hold at once. Only a Reversal raises an alert.
+    not_to_confuse_with: Refinement
+    source: "owner, chat 2026-10-06"
+  - term: Restatement
+    definition: A later mention that repeats an earlier decision ("as we said, Nova"). It is neither a new decision nor a reversal and creates no todo.
+    source: "owner, chat 2026-10-06"
+  - term: Follow-up
+    definition: A Bee todo created for a decision that has a concrete next step. It is closed when a commit that matches that decision lands.
+    source: "owner, chat 2026-10-06"

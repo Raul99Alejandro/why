@@ -44,6 +44,11 @@ function heroCounters(day: Day): string {
   }).join('')}</ul>`;
 }
 
+function ignoredNote(day: Day): string {
+  const n = day.ignoredPersonal ?? 0;
+  return n > 0 ? `<p class="ignored">${n} personal ${n === 1 ? 'conversation' : 'conversations'} ignored</p>` : '';
+}
+
 function ownerMenu(day: Day): string {
   const forgets = day.sessions.map(s =>
     `<button type="button" class="menu-item danger" data-action="forget" data-session="${e(s.id)}">Forget “${e(s.topic)}” <span>${e(time(s.startedAt))}</span></button>`).join('');
@@ -82,7 +87,7 @@ export function dayHtml(day: Day, opts: { private: boolean }): string {
     ? `<ol class="timeline">${ordered.map(d => decisionItem(d, bySha, topics, opts.private)).join('')}</ol>`
     : `<p class="timeline-empty">Bee recorded ${plural(day.sessions.length, 'session')} this day, but no decisions came out of ${day.sessions.length === 1 ? 'it' : 'them'}.</p>`;
   return `<section class="hero" aria-labelledby="day-title"><div class="hero-top"><h1 id="day-title" class="hero-date"><time datetime="${e(day.date)}">${e(longDate(day.date))}</time></h1>`
-    + `${opts.private ? ownerMenu(day) : ''}</div><p class="summary">${e(day.summary)}</p>${heroCounters(day)}</section>`
+    + `${opts.private ? ownerMenu(day) : ''}</div><p class="summary">${e(day.summary)}</p>${heroCounters(day)}${ignoredNote(day)}</section>`
     + `<section class="decisions" aria-label="Decisions"><h2 class="section-title">Decisions</h2>${timeline}</section>${allCommits(day)}`;
 }
 

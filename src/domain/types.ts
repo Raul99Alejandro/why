@@ -12,6 +12,8 @@ export type DayLog = {
   todos: { text: string; sessionId: string }[];
   openQuestions: { text: string; sessionId: string }[];
   commits: CommitRef[];
+  /** Conversations the work filter discarded as personal that day (a count, never content). */
+  ignoredPersonal?: number;
   updatedAt: string;
 };
 export type PublishedDay = Omit<DayLog, 'decisions'> & {
