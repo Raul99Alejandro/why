@@ -1,21 +1,21 @@
 id: W-03
 rule: A decision with a concrete next step creates exactly one Bee todo; the todo is closed when a commit that matches that decision lands.
-status: proposed
+status: approved
 kind: judged
-source: "owner, chat 2026-10-06 (approved the idea of follow-up todos); the examples below are proposed, to be confirmed"
+source: "owner, chat 2026-10-06: approved idea and examples"
 examples:
   - id: W-03-a
-    status: proposed
+    status: approved
     given: { decision: "We will record the Alexa demo in the simulator tomorrow morning" }
     when: { followUp: true }
     then: { todo: true }
   - id: W-03-b
-    status: proposed
+    status: approved
     given: { decision: "We use DynamoDB because it needs no servers" }
     when: { followUp: true }
     then: { todo: false }
   - id: W-03-c
-    status: proposed
+    status: approved
     given: { decision: "Add a work filter to the sync", commit: "feat: work filter and 5-minute sync" }
     when: { close: true }
     then: { closed: true }
