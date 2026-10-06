@@ -144,6 +144,23 @@ export class WhyStack extends Stack {
     demo.addToRolePolicy(polly);
     bedrockAny(demo); pollyAny(demo);
 
+    // Alexa skill endpoint (HTTPS Function URL). The URL is public by design: Alexa cannot sign with IAM,
+    // so the function itself checks the Alexa certificate chain, signature, timestamp and skill id before
+    // doing anything. Reads only the published copy (PUB#), like the demo. The skill id comes from
+    // `-c alexaSkillId=...` after the skill is created; without it every request is rejected.
+    const alexa = fn('Alexa', 'src/handlers/alexa.ts', Duration.seconds(10), { ALEXA_SKILL_ID: ctx('alexaSkillId') ?? '' });
+    alexa.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['dynamodb:GetItem', 'dynamodb:Query'], resources: [table.tableArn],
+      conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PUB#*'] } }
+    }));
+    alexa.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['kms:Decrypt'], resources: [key.keyArn],
+      conditions: { StringEquals: { 'kms:ViaService': `dynamodb.${this.region}.amazonaws.com` } }
+    }));
+    alexa.addToRolePolicy(bedrock);
+    bedrockAny(alexa);
+    const alexaUrl = alexa.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.NONE });
+
     let alarmFn: lambda.IFunction = api;
     let alarmMetric = api.metricErrors({ period: Duration.hours(1), statistic: 'Sum' });
     let alarmShape = { threshold: 5, evaluationPeriods: 1 };
@@ -272,6 +289,7 @@ export class WhyStack extends Stack {
     });
 
     new CfnOutput(this, 'SiteUrl', { value: siteUrl });
+    new CfnOutput(this, 'AlexaEndpoint', { value: alexaUrl.url });
     new CfnOutput(this, 'DemoUrl', { value: `${siteUrl}?demo` });
     new CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId });
     new CfnOutput(this, 'ClientId', { value: client.userPoolClientId });

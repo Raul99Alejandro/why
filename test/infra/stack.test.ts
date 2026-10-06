@@ -133,6 +133,14 @@ describe('Why stack', () => {
     expect(withGroup.some(id => id.startsWith('AWS679f53fac'))).toBe(true);
     expect(withGroup.some(id => id.startsWith('CustomCDKBucketDeployment'))).toBe(true);
   });
+  it('serves the Alexa skill from a function that reads only published keys and cannot scan, write or read secrets', () => {
+    const policy = JSON.stringify(Object.entries(t.findResources('AWS::IAM::Policy')).find(([id]) => /Alexa/.test(id))![1]);
+    expect(policy).toContain('PUB#*');
+    expect(policy).toContain('"kms:ViaService":"dynamodb.us-east-1.amazonaws.com"');
+    expect(policy).not.toMatch(/dynamodb:(Scan|PutItem|UpdateItem|DeleteItem|BatchWriteItem)|secretsmanager|polly/);
+    const urls = Object.values(t.findResources('AWS::Lambda::Url', { Properties: { AuthType: 'NONE' } }));
+    expect(urls).toHaveLength(1);
+  });
   it('gives the demo function no reserved concurrency', () => {
     for (const fn of Object.values(t.findResources('AWS::Lambda::Function'))) expect(fn.Properties.ReservedConcurrentExecutions).toBeUndefined();
   });

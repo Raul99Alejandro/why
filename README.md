@@ -29,7 +29,7 @@ Needs Node.js 24, no AWS account:
 
 ```bash
 npm ci
-npm test              # 151 tests
+npm test
 npm run web:dev       # open http://localhost:5173/?mock and ?mock&demo
 ```
 
@@ -63,6 +63,30 @@ npm run web:dev       # open http://localhost:5173/?mock and ?mock&demo
 - **Store.** DynamoDB with a customer-managed KMS key. Raw utterances carry a 30-day TTL; the log keeps only extracted decisions, reasons and short quotes.
 - **Review and publish.** The owner previews and approves a filtered copy: deterministic redaction, a model review that replaces names, then a second deterministic pass (`src/redact.ts`, `src/publish.ts`).
 - **Ask.** The demo and the private page search the log and answer through Nova with citations; any answer without a valid citation is replaced by a fallback. Polly voices the reply (`src/ask.ts`, `src/speech.ts`).
+
+## Ask Alexa
+
+A custom Alexa skill, **Why decisions** (en-US), answers "what did we decide about ..." out loud from the **public demo copy** only. It has no Echo requirement: you test it in the developer console simulator.
+
+- Skill package: `skill-package/` (invocation name "why decisions", `AskWhyIntent` with an `AMAZON.SearchQuery` slot). Privacy policy: `/privacy.html` on the site.
+- Endpoint: the `Alexa` Lambda behind a Function URL (stack output `AlexaEndpoint`). Alexa cannot sign with IAM, so the function itself checks the certificate URL and chain, the request signature (SHA-256 or SHA-1), a timestamp within 150 seconds, and the skill id, and rejects everything else before touching data or the model. Its role can read only `PUB#` keys, so private days are unreachable. With no skill id configured it rejects every request.
+- Answer: the same `ask` logic as the page, at most two spoken sentences, a simple card, and "I couldn't find that in the decision log" when nothing matches (also when the model is slow: Alexa gives 8 seconds).
+
+Simulator steps (account with the ASK CLI logged in: `ask configure`):
+
+```bash
+# 1. First deploy (creates the endpoint; the skill id is still empty, so requests are rejected)
+npm run web:build
+AWS_PROFILE=counterpart AWS_REGION=us-east-1 npm run cdk -- deploy -c ownerEmail=<email> -c repos=<repos> -c beeMode=cli
+# 2. Put the AlexaEndpoint output into the manifest and create the skill
+sed -i 's#https://REPLACE-WITH-ALEXA-ENDPOINT.lambda-url.us-east-1.on.aws/#<AlexaEndpoint output>#' skill-package/skill.json
+ask deploy --target skill-metadata
+ask status          # shows the skill id (amzn1.ask.skill....)
+# 3. Redeploy with the skill id so the function accepts only this skill
+AWS_PROFILE=counterpart AWS_REGION=us-east-1 npm run cdk -- deploy -c alexaSkillId=<skill id> -c ownerEmail=<email> -c repos=<repos> -c beeMode=cli
+```
+
+Then open the skill in the [Alexa developer console](https://developer.amazon.com/alexa/console/ask), go to **Test**, set "Skill testing is enabled in" to **Development**, and type or say `open why decisions`, then `what did we decide about <a topic from the demo>`. Publish at least one day first, otherwise the answer is the "couldn't find" fallback. Keep `-c alexaSkillId=...` on every later deploy, or the skill id resets to empty.
 
 ## Security and privacy
 

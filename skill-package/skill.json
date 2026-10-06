@@ -1,0 +1,45 @@
+{
+  "manifest": {
+    "manifestVersion": "1.0",
+    "publishingInformation": {
+      "locales": {
+        "en-US": {
+          "name": "Why decisions",
+          "summary": "Ask what was decided about a topic, from the public Why demo log.",
+          "description": "Why turns work conversations into a log of decisions. Ask what was decided about a topic and hear a short answer from the public demo copy of the log.",
+          "examplePhrases": [
+            "Alexa, open why decisions",
+            "Alexa, ask why decisions what did we decide about the voice model",
+            "Alexa, ask why decisions why did we choose Nova"
+          ],
+          "keywords": ["decisions", "log", "work"]
+        }
+      },
+      "isAvailableWorldwide": false,
+      "distributionCountries": ["US"],
+      "category": "ORGANIZERS_AND_ASSISTANTS",
+      "testingInstructions": "Development only. Test in the Alexa developer console simulator."
+    },
+    "privacyAndCompliance": {
+      "allowsPurchases": false,
+      "usesPersonalInfo": false,
+      "isChildDirected": false,
+      "isExportCompliant": true,
+      "containsAds": false,
+      "locales": {
+        "en-US": {
+          "privacyPolicyUrl": "https://dxhdmlf1bzl03.cloudfront.net/privacy.html"
+        }
+      }
+    },
+    "apis": {
+      "custom": {
+        "endpoint": {
+          "uri": "https://REPLACE-WITH-ALEXA-ENDPOINT.lambda-url.us-east-1.on.aws/",
+          "sslCertificateType": "Wildcard"
+        },
+        "interfaces": []
+      }
+    }
+  }
+}

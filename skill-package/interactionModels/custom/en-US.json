@@ -1,0 +1,27 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "why decisions",
+      "intents": [
+        { "name": "AMAZON.HelpIntent", "samples": [] },
+        { "name": "AMAZON.StopIntent", "samples": [] },
+        { "name": "AMAZON.CancelIntent", "samples": [] },
+        { "name": "AMAZON.FallbackIntent", "samples": [] },
+        {
+          "name": "AskWhyIntent",
+          "slots": [{ "name": "query", "type": "AMAZON.SearchQuery" }],
+          "samples": [
+            "what did we decide about {query}",
+            "what did we decide on {query}",
+            "why did we choose {query}",
+            "why did we pick {query}",
+            "why did we go with {query}",
+            "ask what we decided about {query}",
+            "tell me about the decision on {query}"
+          ]
+        }
+      ],
+      "types": []
+    }
+  }
+}
