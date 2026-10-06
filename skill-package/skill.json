@@ -12,11 +12,17 @@
             "Alexa, ask why decisions what did we decide about the voice model",
             "Alexa, ask why decisions why did we choose Nova"
           ],
-          "keywords": ["decisions", "log", "work"]
+          "keywords": [
+            "decisions",
+            "log",
+            "work"
+          ]
         }
       },
       "isAvailableWorldwide": false,
-      "distributionCountries": ["US"],
+      "distributionCountries": [
+        "US"
+      ],
       "category": "ORGANIZERS_AND_ASSISTANTS",
       "testingInstructions": "Development only. Test in the Alexa developer console simulator."
     },
@@ -35,7 +41,7 @@
     "apis": {
       "custom": {
         "endpoint": {
-          "uri": "https://REPLACE-WITH-ALEXA-ENDPOINT.lambda-url.us-east-1.on.aws/",
+          "uri": "https://6spkfuqg7hmysvni4zovc7o4uq0xrxeu.lambda-url.us-east-1.on.aws/",
           "sslCertificateType": "Wildcard"
         },
         "interfaces": []

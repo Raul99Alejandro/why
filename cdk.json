@@ -1,6 +1,6 @@
 {
   "app": "npx tsx infra/bin/app.ts",
   "context": {
-    "alexaSkillId": ""
+    "alexaSkillId": "amzn1.ask.skill.eaceec42-ea7b-44c7-b554-2beac5b48038"
   }
 }
