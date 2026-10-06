@@ -6,6 +6,28 @@ Why listens (through a [Bee](https://bee.computer) wearable) to the owner's real
 
 ## For judges
 
+### Judges' quick path (3 minutes)
+
+1. **Open the [demo](https://dxhdmlf1bzl03.cloudfront.net/?demo)** and read one day: decisions, the reason for each, a short quote, linked commits, and the line "N personal conversations ignored".
+2. Look for a **Changed** badge: a decision that directly contradicts an earlier one, with both days linked and the old decision's commits listed as "work that may need undoing". Follow-ups show **open** or **closed by a commit**.
+3. **Ask** by voice or text: "What did I decide about ...?" The answer cites its sources; an unknown topic gets "I couldn't find that", never an invented answer.
+4. **Alexa**: the same question out loud through the skill "Why decisions" (steps in [Ask Alexa](#ask-alexa); it runs in the developer console simulator).
+5. **Bee itself**: the reversal alert and the follow-ups are Bee todos in the owner's own Bee app (see [How reversal alerts and Bee todos work](#how-reversal-alerts-and-bee-todos-work)); the [video](docs/video-script.md) script shows them arriving.
+6. Evidence: [docs/security.md](docs/security.md), [friction-log.md](friction-log.md), [docs/product-feedback.md](docs/product-feedback.md), and [Measured accuracy](#measured-accuracy).
+
+### What changed since 3 October
+
+Why started as a daily decision log. It now acts while you work:
+
+| Before (3 Oct) | Now |
+| --- | --- |
+| Synced every 30 minutes, everything Bee heard went to analysis | Listens all day but filters first: work hours plus an AI work-or-personal check, personal speech is discarded before storage (only a counter stays); sync every 5 minutes |
+| A log you read afterwards | **Reversal alerts**: when a new decision directly contradicts an earlier one, Why writes a todo into Bee ("You changed your mind about X: old -> new. Confirm?") with an alarm 10 minutes later |
+| Pending items were text on a page | **Follow-ups written to Bee as todos**, completed by Why when a matching public commit lands |
+| Ask by page, voice via the browser | Also **Alexa**: "what did we decide about ..." (skill and endpoint in the repo, simulator) |
+| No quality number | A local labeling tool and `npm run accuracy` so precision and recall can be measured on a real day ([Measured accuracy](#measured-accuracy)) |
+| 151 tests | 261 tests, the domain rules (work filter, reversal, follow-up) written as approved examples in `domain/` |
+
 ### Try the live demo, nothing to install
 
 **[Open the demo](https://dxhdmlf1bzl03.cloudfront.net/?demo)** (read-only, no sign-in).
@@ -55,6 +77,50 @@ npm run web:dev       # open http://localhost:5173/?mock and ?mock&demo
  filtered copy (PUB#)  --->  demo page  (separate read-only Lambda; Ask + Polly)
 ```
 
+### How reversal alerts and Bee todos work
+
+```mermaid
+flowchart LR
+  B[Bee wearable] -->|recordings| C["bee CLI on the PC<br/>every 5 min"]
+  C --> F{"Work filter<br/>hours + AI"}
+  F -->|personal or off hours| X["discarded, only a count"]
+  F -->|work| A["Nova 2 Lite<br/>decisions + next steps"]
+  A --> J{"Judge vs last 30 days<br/>same topic?"}
+  J -->|reversal| R["Bee todo: You changed your mind...<br/>alarm in 10 min"]
+  J -->|refinement or restatement| L["linked, no alert"]
+  A -->|concrete next step| T["Bee todo: follow-up"]
+  G[Public GitHub commits] --> M{"Strict matcher<br/>per follow-up"}
+  T --> M
+  M -->|matching commit| D["bee todos complete"]
+  R --> P[Page: Changed badge + commits to undo]
+  T --> P
+  D --> P
+```
+
+- **Reversal means a direct contradiction on the same topic** ("use Nova" then "use Claude Sonnet"). A narrowing ("Nova with reasoning") is linked as a refinement and a repeat ("as we said, Nova") is neither a new decision nor an alert, so the alerts stay rare and meaningful. The rule and its approved examples are `domain/rules/w02.yaml`; the same examples are in the judge's prompt and in the tests.
+- **A chain stays readable**: A, then B, then back to A shows both steps, not just the last.
+- **Follow-ups**: a decision with a concrete next step becomes one Bee todo in the owner's own words. A commit closes it only when a strict per-follow-up matcher agrees; a commit that mentions two decisions closes both only if each passes.
+- **Idempotent writes**: every decision has a stable id and a record that holds the Bee todo id, written with conditional versioned writes, so a todo is never created twice. The PC sync is the single writer. If Bee is offline or signed out the run finishes the rest and retries next run; a todo that keeps failing is given up after five attempts. Old decisions (over 24 hours) are linked but never alert, and a run writes at most eight todos.
+- Code: `src/relate.ts` (judge, alert text, closer), `src/ledger.ts` (records and `reconcile`), `src/bee/todos.ts` (the `bee todos` commands).
+
+### Privacy: what is and is not stored
+
+- **Work filter before storage.** Outside the work hours, speech is cut off per utterance; inside, each finished session segment gets one classifier call, and a personal one is dropped. Personal or off-hours text is never stored, never sent to the analysis model and never logged; the only trace is a counter ("N personal conversations ignored"). If the classifier keeps failing for a segment, its text is discarded too (an id and a count remain).
+- **Nothing personal is stored.** The log keeps extracted decisions, reasons and short quotes. Raw utterances of work sessions expire after 30 days. The Bee token never leaves the PC.
+- **Bystanders.** Bee hears other people. Before anything is public, the owner previews a filtered copy: emails, phone and card numbers and credential links are redacted, other people's names become a role ("a colleague"), original-language quotes are dropped and whole sessions can be excluded. The demo reads only that copy, through an IAM role that can read only `PUB#` keys.
+- **Bee todos are short and redacted**: an alert carries a topic and two clipped decisions (at most 120 characters), not a quote.
+- Details and the test behind each control: [docs/security.md](docs/security.md).
+
+### Why this is not just a log
+
+A log-only tool records and waits for you to read it. Why:
+
+- runs **live on real Bee data** (not a mocked feed), every 5 minutes;
+- **acts inside Bee**: the alert and the follow-ups are Bee todos in the app the owner already checks, and they close themselves when the work lands;
+- **filters ambient audio by itself**, so an always-on wearable does not become a surveillance log;
+- is reachable as a **page and by voice** (browser microphone and Alexa), with cited answers only;
+- shows **its own quality**: the domain rules are approved examples that run as tests, and accuracy is measured against the owner's own labels.
+
 - **Collect on the owner's PC.** Bee's API uses a private certificate authority and the token lives in the OS credential store, so the collector (`src/collect.ts`, `src/cli/sync.ts`) runs locally with the `bee` CLI. A Windows scheduled task runs it every 5 minutes with a least-privilege IAM user. The Bee token never reaches AWS.
 - **Sessions.** Each conversation is cut into sessions at pauses longer than 20 minutes; a session is processed once it has been quiet for 30 minutes.
 - **Work filter (W-01).** Bee listens all day, so Why filters before it stores anything. Speech outside the work hours (default Monday to Saturday, 09:00 to 20:00, `America/Mexico_City`; set `WORK_DAYS`, `WORK_START`, `WORK_END`, `TIME_ZONE` to change) is cut off, so a conversation that runs past 20:00 keeps only its working part. Each finished session segment inside the hours then gets one small classifier call (Nova 2 Lite, the segment text only) that answers work or personal. Personal and out-of-hours segments are never stored and never sent to the analysis model; only a per-day counter remains, shown on the page as "N personal conversations ignored". If the classifier fails, the segment is neither stored nor dropped: it waits and is retried on the next run. The rules and examples live in `domain/` (`npm run domain:check`).
@@ -103,11 +169,33 @@ The data is a person's spoken conversations, so the design starts from the worst
 
 Full threat model, each control with the code that implements it and the test that proves it: **[docs/security.md](docs/security.md)**. How Bee's API behaves, as investigated for this project: [docs/bee-api.md](docs/bee-api.md).
 
+## Measured accuracy
+
+Does Why find the decisions a person really made? `npm run label` and `npm run accuracy` measure it on one real day, locally:
+
+```bash
+# 1. Your own AWS profile (the sync user works). Serves http://127.0.0.1:4173 on this PC only.
+AWS_PROFILE=why-sync TABLE=<table> npm run label
+# 2. In the page: pick a day, mark each of Why's decisions "real" or "not a decision", add what it missed, save.
+#    Labels go to data/labels-<day>.json (git-ignored, never uploaded).
+# 3. Prints numbers only (precision, recall, F1):
+AWS_PROFILE=why-sync TABLE=<table> npm run accuracy -- --day YYYY-MM-DD
+```
+
+The page shows the day's utterances, so it runs only on the owner's machine with the owner's credentials; it is never deployed. A Why decision matches a real one when their word overlap is at least 0.8 (the same helper the rest of Why uses); wording you add yourself is matched the same way, so the measure is conservative.
+
+| Day | Why decisions | Real decisions | Precision | Recall | F1 |
+| --- | --- | --- | --- | --- | --- |
+| *to be filled by the owner* | | | | | |
+
+No number is claimed until the owner has labeled a day.
+
 ## Evidence
 
 What exists today:
 
-- Test suite: **151 tests** in 17 files, passing (`npx vitest run`), covering the analyzer, redaction, publishing, the API, the CDK stack's IAM and CloudFront settings, and the web renderer.
+- Test suite: **261 tests**, passing (`npx vitest run`), covering the analyzer, the work filter, reversal and follow-up logic with the approved domain examples, redaction, publishing, the API, the Alexa endpoint, the CDK stack's IAM and CloudFront settings, the labeling tool and the web renderer.
+- Friction log and product feedback: [friction-log.md](friction-log.md), [docs/product-feedback.md](docs/product-feedback.md).
 - Security document with a test named for every control: [docs/security.md](docs/security.md).
 - `cdk-nag` AWS Solutions checks run on every synth; the stack synthesizes clean, with each suppression justified in `infra/lib/why-stack.ts`.
 - A `test/security.test.ts` that scans the source and fails if a log call could carry conversation text or if real data is committed.
@@ -179,6 +267,10 @@ The table, key and bucket are set to be destroyed with the stack. Delete the syn
 ```
 src/
   collect.ts, analyze.ts, compile.ts, publish.ts   pipeline: sessions, analysis, day log, publish gate
+  workfilter.ts                                    work hours and the work-or-personal classifier
+  relate.ts, ledger.ts, bee/todos.ts               reversal judge, decision ledger, Bee todos
+  alexa/                                           Alexa request verification and the skill
+  label/, cli/label.ts, cli/accuracy.ts            local labeling page and accuracy numbers (never deployed)
   redact.ts, untrusted.ts                          redaction and prompt-injection defenses
   ask.ts, speech.ts, nova.ts, github.ts            Ask, Polly, Bedrock client, commit lookup
   api/                                             router, auth, demo rate limits
@@ -190,7 +282,7 @@ domain/                                            glossary and rules (work filt
 web/                                               browser UI (Vite, TypeScript), with a mock backend
 infra/                                             CDK app and the single stack (+ cdk-nag)
 scripts/                                           Windows scheduled-task scripts for the sync
-docs/                                              security.md, bee-api.md
+docs/                                              security.md, bee-api.md, product-feedback.md, video-script.md
 test/                                              Vitest suites (unit, store contract, CDK stack, web)
 ```
 

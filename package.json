@@ -17,7 +17,9 @@
     "web:build": "vite build web --outDir ../dist-web --emptyOutDir",
     "cdk": "cdk --app \"npx tsx infra/bin/app.ts\"",
     "battery": "tsx scripts/battery.ts",
-    "domain:check": "node scripts/check-domain.mjs"
+    "domain:check": "node scripts/check-domain.mjs",
+    "label": "tsx src/cli/label.ts",
+    "accuracy": "tsx src/cli/accuracy.ts"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1141.0",
