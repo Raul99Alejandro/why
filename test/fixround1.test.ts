@@ -13,7 +13,7 @@ const run = (store: MemoryStore, now: Date, classify: () => Promise<'work' | 'pe
   collect({ source: source(), store, timeZone: 'America/Mexico_City', now, workHours: OFFICE, classify });
 
 describe('classifier retry cap', () => {
-  it('backs off between tries, then parks the segment as pending_review and moves the cursor on', async () => {
+  it('backs off between tries, then drops the text, keeps only a marker and moves the cursor on', async () => {
     const store = new MemoryStore();
     await store.setCursor('v1-1', 'x');
     let calls = 0;
@@ -34,9 +34,11 @@ describe('classifier retry cap', () => {
     expect(calls).toBe(MAX_CLASSIFY_FAILURES);
     expect(last.classifyGaveUp).toHaveLength(1);
     expect((await store.getCursor())!.cursor).toBe('v1-2');
-    const parked = (await store.getSession(last.classifyGaveUp[0]!))!;
-    expect(parked.state).toBe('pending_review');
-    expect(await store.listPending()).toEqual([]); // never analyzed
+    const id = last.classifyGaveUp[0]!;
+    expect(await store.getSession(id)).toBeNull(); // no utterance text stored
+    expect(await store.isIgnored(id)).toBe(true);
+    expect(await store.listPending()).toEqual([]);
+    expect(await store.ignoredCounts('2026-10-05')).toEqual({ personal: 0, offHours: 0 }); // not shown as personal
     // Seen again: not judged again.
     await run(store, new Date(now.getTime() + 3_600_000), fail);
     expect(calls).toBe(MAX_CLASSIFY_FAILURES);

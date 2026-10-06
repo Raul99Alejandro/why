@@ -7,7 +7,7 @@ export interface SessionRecord {
   analysis: Analysis | null;
 }
 
-export type IgnoredKind = 'personal' | 'offHours';
+export type IgnoredKind = 'personal' | 'offHours' | 'unclassified';
 
 export interface Store {
   getCursor(): Promise<{ cursor: string; syncedAt: string } | null>;

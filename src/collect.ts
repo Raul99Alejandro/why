@@ -11,7 +11,7 @@ export interface CollectResult {
   ignoredPersonal: number; ignoredOffHours: number;
   /** Segments the classifier could not judge (this run, or still backing off): not stored yet, retried later. */
   classifyFailed: string[];
-  /** Segments given up after MAX_CLASSIFY_FAILURES: stored as pending_review (never analyzed or published). */
+  /** Segments given up after MAX_CLASSIFY_FAILURES: dropped after leaving only an id/kind/day marker (no text kept). */
   classifyGaveUp: string[];
   /** Days whose ignored counters changed. */
   ignoredDays: string[];
@@ -112,13 +112,12 @@ export async function collect(opts: {
       } else if (outcome === 'pending') {
         const failures = (state?.failures ?? 0) + 1;
         if (failures >= MAX_CLASSIFY_FAILURES) {
-          // Give up: park it for review (not analyzed, not published) so one bad segment cannot hold the cursor forever.
-          const stored = kept!;
-          const created = await opts.store.putSession(stored, localDay(stored.startedAt, opts.timeZone), Math.floor(opts.now.getTime() / 1000) + RAW_TTL_SECONDS);
-          if (created) await opts.store.setAnalysis(stored.id, null, 'pending_review');
-          classifyGaveUp.push(stored.id);
-          classifyFailed.push(stored.id);
-          log({ level: 'warn', msg: 'classify_gave_up', sessionId: stored.id, failures });
+          // Give up: an unclassifiable segment may be personal, so its text is never kept. Only an id/kind/day marker
+          // remains, and the cursor moves on so one bad segment cannot hold it forever.
+          await opts.store.recordIgnored(localDay(session.startedAt, opts.timeZone), session.id, 'unclassified');
+          classifyGaveUp.push(session.id);
+          classifyFailed.push(session.id);
+          log({ level: 'warn', msg: 'classify_gave_up', sessionId: session.id, failures });
         } else {
           await opts.store.setClassifyState(session.id, failures, new Date(opts.now.getTime() + classifyBackoffMs(failures)).toISOString());
           classifyFailed.push(session.id);
