@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CliBeeTodos, parseTodoId, shellSafe } from '../../src/bee/todos.js';
+import { CliBeeTodos, errorInfo, parseTodoId, shellSafe } from '../../src/bee/todos.js';
 
 describe('Bee todos CLI', () => {
   it('creates with --text, --alarm-at and --json, and reads the id', async () => {
@@ -26,5 +26,13 @@ describe('Bee todos CLI', () => {
     const inner = shellSafe('a & b | c > d "e" %PATH% `x` $(y)').replace(/^"|"$/g, '');
     expect(inner).not.toMatch(/[&|><"%`$]/);
     expect(shellSafe('Old → new')).toContain('->');
+  });
+  it('treats only Bee own not-found answers as not found', () => {
+    expect(errorInfo({ stderr: 'Error: todo not found' }).notFound).toBe(true);
+    expect(errorInfo({ stderr: 'request failed: HTTP 404' }).notFound).toBe(true);
+    expect(errorInfo({ stderr: 'bee: command not found' }).notFound).toBe(false);
+    expect(errorInfo({ stderr: "'bee' is not recognized as an internal or external command" }).notFound).toBe(false);
+    expect(errorInfo({ code: 'ENOENT' }).notFound).toBe(false);
+    expect(errorInfo({ stderr: 'todo service unavailable' }).notFound).toBe(false);
   });
 });

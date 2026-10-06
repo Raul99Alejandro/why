@@ -61,6 +61,10 @@ function normAt(at: string, fallback: string): string {
 
 type Slot = 'alert' | 'followUp';
 
+/** Text compared the way Bee may have stored it: lowercase, no punctuation or arrows, single spaces. */
+const norm = (t: string): string => plainText(t).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const liveFollowUp = (r: DecisionRecord) => ['open', 'creating', 'closing', 'orphaned'].includes(r.followUp?.state ?? '');
+
 /**
  * After sessions are analyzed: judges each not-yet-judged decision of `days` against the last 30 days (reversal / refinement /
  * restatement / unrelated), stores the links, then performs the Bee writes that are still due (alerts, follow-up todos, completions)
@@ -108,9 +112,22 @@ export async function reconcile(deps: {
       const analysis = rec.analysis as Analysis | null;
       if (!analysis) continue;
       const ids = decisionIds(rec.session.id, analysis.decisions);
-      // A re-analysis that changed the wording leaves records of decisions that no longer exist: drop them.
+      // A re-analysis that changed the wording leaves records of decisions that no longer exist. One without a live todo is dropped.
+      // One with a live todo (open or creating) is never dropped: it moves to the reworded decision (token overlap >= 0.8) or becomes
+      // an orphan whose Bee todo is completed next run.
       for (const r of [...records.values()]) {
-        if (r.sessionId === rec.session.id && !ids.includes(r.id)) { await store.deleteDecisionRecord(r.day, r.id); records.delete(r.id); }
+        if (r.sessionId !== rec.session.id || ids.includes(r.id)) continue;
+        if (!liveFollowUp(r) && r.alert?.state !== 'creating') { await store.deleteDecisionRecord(r.day, r.id); records.delete(r.id); continue; }
+        const old = r.what ?? r.followUp?.text ?? '';
+        const i = analysis.decisions.findIndex((d, k) => !records.has(ids[k]!) && similarity(old, d.what) >= SAME_STEP);
+        if (i >= 0 && r.followUp?.state !== 'orphaned') {
+          const moved: DecisionRecord = { ...r, id: ids[i]!, what: analysis.decisions[i]!.what, v: 0 };
+          if (await store.createDecisionRecord(moved)) { await store.deleteDecisionRecord(r.day, r.id); records.delete(r.id); records.set(moved.id, moved); affected.add(r.day); continue; }
+        }
+        if (r.followUp && liveFollowUp(r) && r.followUp.state !== 'orphaned' && r.followUp.state !== 'closing') {
+          r.followUp = { ...r.followUp, state: 'orphaned' };
+          if (!(await save(r))) continue;
+        }
       }
       analysis.decisions.forEach((d, i) => {
         if (!records.has(ids[i]!)) fresh.push({ id: ids[i]!, sessionId: rec.session.id, day, at: normAt(d.at, rec.session.startedAt), what: d.what, why: d.why });
@@ -131,7 +148,7 @@ export async function reconcile(deps: {
     if (!j) { out.judgeFailed++; continue; }
     out.judged++;
     const isFresh = now.getTime() - Date.parse(f.at) <= FRESH_MS;
-    const rec: DecisionRecord = { id: f.id, sessionId: f.sessionId, day: f.day, at: f.at, v: 0 };
+    const rec: DecisionRecord = { id: f.id, sessionId: f.sessionId, day: f.day, at: f.at, what: f.what, v: 0 };
     const target = candidates.find(c => c.id === j.priorId)?.rec;
     if (j.relation !== 'unrelated' && target) {
       rec.relation = { kind: j.relation, priorId: target.id, priorDay: target.day };
@@ -187,7 +204,7 @@ export async function reconcile(deps: {
     };
     if (cur.state === 'pending' && now.getTime() - Date.parse(r.at) > FRESH_MS) { set('skipped'); await save(r); return; } // too late to act on
     if (cur.state === 'creating') {
-      const found = await bee(r, slot, 'list', async () => (await todos!.list()).find(t => plainText(t.text).toLowerCase() === plainText(text!).toLowerCase()));
+      const found = await bee(r, slot, 'list', async () => (await todos!.list()).find(t => norm(t.text) === norm(text!)));
       if (!found) return; // listing failed: stay as is, try again next run
       if (found.value) {
         set(slot === 'alert' ? 'done' : 'open', found.value.id);
@@ -205,9 +222,9 @@ export async function reconcile(deps: {
     if (await save(r)) { if (slot === 'alert') out.alertsCreated++; else out.followUpsCreated++; affected.add(r.day); }
   };
 
-  const complete = async (r: DecisionRecord): Promise<void> => {
+  const complete = async (r: DecisionRecord, todoId: string | undefined = r.followUp!.todoId): Promise<void> => {
     const f = r.followUp!;
-    if (!(await bee(r, 'complete', 'complete', async () => { await todos!.complete(f.todoId!); return true; }))) return;
+    if (!(await bee(r, 'complete', 'complete', async () => { await todos!.complete(todoId!); return true; }))) return;
     r.followUp = { ...f, state: 'closed' };
     if (await save(r)) { out.followUpsClosed++; affected.add(r.day); }
   };
@@ -218,6 +235,17 @@ export async function reconcile(deps: {
     if ((r.alert?.state === 'pending' || r.alert?.state === 'creating') && r.relation && budget > 0) await ensure(r, 'alert');
     if ((r.followUp?.state === 'pending' || r.followUp?.state === 'creating') && budget > 0) await ensure(r, 'followUp');
     if (r.followUp?.state === 'closing' && r.followUp.todoId) await complete(r);
+    if (r.followUp?.state === 'orphaned') {
+      let todoId = r.followUp.todoId;
+      if (!todoId) { // it was still `creating`: complete the todo if Bee has it, otherwise there is nothing to close
+        const text = r.followUp.text;
+        const found = await bee(r, 'complete', 'list', async () => (await todos.list()).find(t => norm(t.text) === norm(text))?.id);
+        if (!found) continue;
+        todoId = found.value;
+        if (!todoId) { r.followUp = { ...r.followUp, state: 'closed' }; await save(r); continue; }
+      }
+      await complete(r, todoId);
+    }
   }
 
   // 3. Close follow-ups that a new commit carries out. Each follow-up is judged on its own, so a commit that serves two decisions closes both only if each passes.

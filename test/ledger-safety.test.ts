@@ -131,4 +131,52 @@ describe('crash safety, single writer, poison pills, stable ids', () => {
   it('gives the same wording twice in one session two ids', () => {
     expect(new Set(decisionIds('s', [{ what: 'A b' }, { what: 'a  B' }, { what: 'c' }])).size).toBe(3);
   });
+
+  const STEP = 'Record the Alexa demo in the simulator';
+  async function withLiveTodo() {
+    const store = new MemoryStore(); const todos = new FakeTodos();
+    await seed(store, { id: 's1', day: '2026-10-06', at: FRESH, decisions: [{ what: STEP }] });
+    const verdicts: Record<string, Verdict> = { [STEP]: { relation: 'unrelated', nextStep: STEP } };
+    const j = judge(verdicts);
+    await run(store, j.model, ['2026-10-06'], todos);
+    expect((await recOf(store))[0]!.followUp).toMatchObject({ state: 'open', todoId: 't1' });
+    return { store, todos, verdicts, j };
+  }
+
+  it('a reworded decision keeps its one live todo', async () => {
+    const { store, todos, j } = await withLiveTodo();
+    await reanalyze(store, 's1', [{ what: `${STEP} tomorrow` }]);
+    const r = await run(store, j.model, ['2026-10-06'], todos);
+    expect(r.judged).toBe(0);
+    const recs = await recOf(store);
+    expect(recs).toHaveLength(1);
+    expect(recs[0]).toMatchObject({ id: id('s1', `${STEP} tomorrow`), followUp: { state: 'open', todoId: 't1' } });
+    expect(todos.created).toHaveLength(1);
+    expect(todos.completed).toEqual([]);
+  });
+
+  it('a vanished decision never loses its live todo: it is completed in Bee, and meanwhile counts as a duplicate', async () => {
+    const { store, todos, verdicts, j } = await withLiveTodo();
+    verdicts['Something else'] = { relation: 'unrelated', nextStep: 'Record the Alexa demo in the simulator today' };
+    await reanalyze(store, 's1', [{ what: 'Something else' }]);
+    todos.offline = true;
+    await run(store, j.model, ['2026-10-06'], todos);
+    const held = await recOf(store);
+    expect(held.find(r => r.id === id('s1', STEP))!.followUp).toMatchObject({ state: 'orphaned', todoId: 't1' });
+    expect(held.find(r => r.id === id('s1', 'Something else'))!.followUp).toBeUndefined(); // same step as the live one: no second todo
+    todos.offline = false;
+    await run(store, j.model, ['2026-10-06'], todos);
+    expect(todos.completed).toEqual(['t1']);
+    expect(todos.created).toHaveLength(1);
+    expect((await recOf(store)).find(r => r.id === id('s1', STEP))!.followUp!.state).toBe('closed');
+  });
+
+  it('adopts a todo whose stored text differs in case and punctuation', async () => {
+    const store = new MemoryStore(); const todos = new FakeTodos();
+    await seed(store, { id: 's1', day: '2026-10-06', at: FRESH, decisions: [{ what: 'Record the demo' }] });
+    await store.createDecisionRecord({ id: id('s1', 'Record the demo'), sessionId: 's1', day: '2026-10-06', at: FRESH, v: 0, followUp: { state: 'creating', text: 'Record the demo -> now.', checked: [] } });
+    todos.created.push({ id: 'b9', text: 'RECORD  the demo  → now!!' });
+    expect(await run(store, judge({}).model, ['2026-10-06'], todos)).toMatchObject({ adopted: 1 });
+    expect(todos.created).toHaveLength(1);
+  });
 });

@@ -18,7 +18,10 @@ const describe = (err: unknown): BeeCliError => {
   if (err instanceof BeeCliError) return err;
   const e = err as { code?: unknown; stderr?: unknown; name?: string };
   const out = `${typeof e.stderr === 'string' ? e.stderr : ''}`;
-  return new BeeCliError(/not.?found|404|no such|does not exist/i.test(out), String(e.code ?? e.name ?? 'error'));
+  // Only Bee's own answer about the todo counts; a missing or broken binary ("command not found") is an ordinary failure.
+  const shell = /command not found|is not recognized|ENOENT|cannot find/i.test(out);
+  const beeSaysMissing = /\b404\b|\btodo\b[^\n]*\bnot found\b|\bnot found\b[^\n]*\btodo\b|\btodo\b[^\n]*\bdoes not exist\b/i.test(out);
+  return new BeeCliError(!shell && beeSaysMissing, String(e.code ?? e.name ?? 'error'));
 };
 /** Error class and exit code only. */
 export const errorInfo = (err: unknown): { error: string; code: string; notFound: boolean } => {

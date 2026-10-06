@@ -19,14 +19,16 @@ export type TodoSlot = {
 };
 export type DecisionRecord = {
   id: string; sessionId: string; day: string; at: string;
+  /** The decision's wording when judged, to re-attach a live todo if a re-analysis rewords the decision. */
+  what?: string;
   /** Version for optimistic writes: a save succeeds only if the stored version is still this one. */
   v: number;
   relation?: { kind: 'reversal' | 'refinement' | 'restatement'; priorId: string; priorDay: string };
   /** Reversal alert in Bee. 'skipped' for old decisions. */
   alert?: TodoSlot;
-  /** Follow-up todo: pending/creating/done(open in Bee) -> closing (matched, completion to retry) -> closed. */
+  /** Follow-up todo: pending/creating/done(open in Bee) -> closing (matched, completion to retry) -> closed. orphaned: its decision vanished in a re-analysis while the todo was live; the todo is completed next run. */
   followUp?: {
-    state: 'pending' | 'creating' | 'open' | 'closing' | 'closed' | 'skipped' | 'gone';
+    state: 'pending' | 'creating' | 'open' | 'closing' | 'closed' | 'skipped' | 'gone' | 'orphaned';
     text: string; todoId?: string; checked: string[]; closedBy?: CommitRef; attempts?: number;
   };
 };
