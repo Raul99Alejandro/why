@@ -70,7 +70,7 @@ A custom Alexa skill, **Why decisions** (en-US), answers "what did we decide abo
 
 - Skill package: `skill-package/` (invocation name "why decisions", `AskWhyIntent` with an `AMAZON.SearchQuery` slot). Privacy policy: `/privacy.html` on the site.
 - Endpoint: the `Alexa` Lambda behind a Function URL (stack output `AlexaEndpoint`). Alexa cannot sign with IAM, so the function itself checks the certificate URL and chain, the request signature (SHA-256 or SHA-1), a timestamp within 150 seconds, and the skill id, and rejects everything else before touching data or the model. Its role can read only `PUB#` keys, so private days are unreachable. With no skill id configured it rejects every request.
-- Answer: the same `ask` logic as the page, at most two spoken sentences, a simple card, and "I couldn't find that in the decision log" when nothing matches (also when the model is slow: Alexa gives 8 seconds).
+- Answer: the same `ask` logic as the page, at most two spoken sentences, a simple card, and "I couldn't find that in the decision log" when nothing matches (when the certificate fetch plus the model take over 7 seconds of Alexa's 8, it says "that is taking too long, try again" instead).
 
 Simulator steps (account with the ASK CLI logged in: `ask configure`):
 
@@ -82,11 +82,11 @@ AWS_PROFILE=counterpart AWS_REGION=us-east-1 npm run cdk -- deploy -c ownerEmail
 sed -i 's#https://REPLACE-WITH-ALEXA-ENDPOINT.lambda-url.us-east-1.on.aws/#<AlexaEndpoint output>#' skill-package/skill.json
 ask deploy --target skill-metadata
 ask status          # shows the skill id (amzn1.ask.skill....)
-# 3. Redeploy with the skill id so the function accepts only this skill
-AWS_PROFILE=counterpart AWS_REGION=us-east-1 npm run cdk -- deploy -c alexaSkillId=<skill id> -c ownerEmail=<email> -c repos=<repos> -c beeMode=cli
+# 3. Put the skill id in cdk.json (context.alexaSkillId) and redeploy, so the function accepts only this skill
+AWS_PROFILE=counterpart AWS_REGION=us-east-1 npm run cdk -- deploy -c ownerEmail=<email> -c repos=<repos> -c beeMode=cli
 ```
 
-Then open the skill in the [Alexa developer console](https://developer.amazon.com/alexa/console/ask), go to **Test**, set "Skill testing is enabled in" to **Development**, and type or say `open why decisions`, then `what did we decide about <a topic from the demo>`. Publish at least one day first, otherwise the answer is the "couldn't find" fallback. Keep `-c alexaSkillId=...` on every later deploy, or the skill id resets to empty.
+Then open the skill in the [Alexa developer console](https://developer.amazon.com/alexa/console/ask), go to **Test**, set "Skill testing is enabled in" to **Development**, and type or say `open why decisions`, then `what did we decide about <a topic from the demo>`. Publish at least one day first, otherwise the answer is the "couldn't find" fallback. The skill id lives in `cdk.json`, so later deploys keep it (`-c alexaSkillId=...` overrides it).
 
 ## Security and privacy
 

@@ -2,7 +2,7 @@ import { createVerify, X509Certificate } from 'node:crypto';
 import { rootCertificates } from 'node:tls';
 
 /** Fetches the PEM chain behind SignatureCertChainUrl. Behind an interface so tests never touch the network. */
-export type FetchChain = (url: string) => Promise<string>;
+export type FetchChain = (url: string, signal?: AbortSignal) => Promise<string>;
 export type VerifyDeps = { fetchChain: FetchChain; now: () => Date; roots?: readonly string[] };
 
 const TOLERANCE_MS = 150_000;
@@ -23,6 +23,8 @@ export function validChain(pem: string, now: Date, roots: readonly string[] = ro
   const certs = splitPem(pem).map(p => new X509Certificate(p));
   const leaf = certs[0];
   if (!leaf) return null;
+  // Every certificate above the leaf signs others, so it must be a CA.
+  for (const c of certs.slice(1)) if (!c.ca) return null;
   for (const c of certs) if (now < new Date(c.validFrom) || now > new Date(c.validTo)) return null;
   if (!leaf.subjectAltName?.split(/,\s*/).includes(`DNS:${SAN_NAME}`)) return null;
   for (let i = 0; i < certs.length - 1; i++) if (!certs[i]!.checkIssued(certs[i + 1]!) || !certs[i]!.verify(certs[i + 1]!.publicKey)) return null;
@@ -31,32 +33,45 @@ export function validChain(pem: string, now: Date, roots: readonly string[] = ro
   return trusted ? leaf : null;
 }
 
-/** Full Alexa request check: certificate URL, chain, signature over the raw body, and a fresh timestamp. Never throws. */
+const NEGATIVE_MS = 60_000;
+
+/** Full Alexa request check: certificate URL, chain, signature over the raw body bytes, and a fresh timestamp. Never throws. */
 export function createRequestVerifier(deps: VerifyDeps) {
-  const cache = new Map<string, X509Certificate>();
-  return async (headers: Record<string, string | undefined>, rawBody: string): Promise<boolean> => {
+  const cache = new Map<string, { leaf: X509Certificate; until: number }>();
+  const failed = new Map<string, number>();
+  return async (headers: Record<string, string | undefined>, rawBody: Buffer, signal?: AbortSignal): Promise<boolean> => {
     try {
       const url = headers.signaturecertchainurl;
       const sha256 = headers['signature-256'];
       const signature = sha256 ?? headers.signature;
       if (!url || !signature || !validChainUrl(url)) return false;
       const now = deps.now();
-      let leaf = cache.get(url);
-      if (!leaf || now > new Date(leaf.validTo)) {
-        const pem = await deps.fetchChain(url);
-        const checked = validChain(pem, now, deps.roots);
-        if (!checked) return false;
-        leaf = checked; cache.set(url, leaf);
+      const t = now.getTime();
+      if ((failed.get(url) ?? 0) > t) return false;
+      let entry = cache.get(url);
+      if (!entry || t > entry.until) {
+        try {
+          const pem = await deps.fetchChain(url, signal);
+          const certs = splitPem(pem).map(p => new X509Certificate(p));
+          const leaf = validChain(pem, now, deps.roots);
+          if (!leaf) { failed.set(url, t + NEGATIVE_MS); return false; }
+          // The cached chain is good only until the first certificate in it expires.
+          entry = { leaf, until: Math.min(...certs.map(c => Date.parse(c.validTo))) };
+          cache.set(url, entry);
+        } catch (err) {
+          if (!signal?.aborted) failed.set(url, t + NEGATIVE_MS); // a deadline is not the certificate's fault
+          throw err;
+        }
       }
-      if (!createVerify(sha256 ? 'RSA-SHA256' : 'RSA-SHA1').update(rawBody).verify(leaf.publicKey, signature, 'base64')) return false;
-      const ts = Date.parse((JSON.parse(rawBody) as { request?: { timestamp?: string } }).request?.timestamp ?? '');
-      return Number.isFinite(ts) && Math.abs(now.getTime() - ts) <= TOLERANCE_MS;
+      if (!createVerify(sha256 ? 'RSA-SHA256' : 'RSA-SHA1').update(rawBody).verify(entry.leaf.publicKey, signature, 'base64')) return false;
+      const ts = Date.parse((JSON.parse(rawBody.toString('utf8')) as { request?: { timestamp?: string } }).request?.timestamp ?? '');
+      return Number.isFinite(ts) && Math.abs(t - ts) <= TOLERANCE_MS;
     } catch { return false; }
   };
 }
 
-export const fetchChainOverHttps: FetchChain = async url => {
-  const res = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(3000) });
+export const fetchChainOverHttps: FetchChain = async (url, signal) => {
+  const res = await fetch(url, { redirect: 'error', signal });
   if (!res.ok) throw new Error('chain fetch failed');
   return res.text();
 };

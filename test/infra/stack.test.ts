@@ -140,6 +140,8 @@ describe('Why stack', () => {
     expect(policy).not.toMatch(/dynamodb:(Scan|PutItem|UpdateItem|DeleteItem|BatchWriteItem)|secretsmanager|polly/);
     const urls = Object.values(t.findResources('AWS::Lambda::Url', { Properties: { AuthType: 'NONE' } }));
     expect(urls).toHaveLength(1);
+    const alexa = Object.entries(t.findResources('AWS::Lambda::Function')).find(([id]) => id.startsWith('Alexa'))![1];
+    expect(alexa.Properties.Timeout).toBe(8);
   });
   it('gives the demo function no reserved concurrency', () => {
     for (const fn of Object.values(t.findResources('AWS::Lambda::Function'))) expect(fn.Properties.ReservedConcurrentExecutions).toBeUndefined();

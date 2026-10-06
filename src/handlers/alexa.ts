@@ -15,14 +15,19 @@ const skillId = process.env.ALEXA_SKILL_ID ?? '';
 
 const json = (statusCode: number, body: unknown) => ({ statusCode, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
+// Alexa allows 8 s from the request; leave a second to send the reply.
+const BUDGET_MS = 7000;
+
 export const handler = async (event: UrlEvent) => {
+  const started = Date.now();
   if (event.requestContext.http.method !== 'POST' || !event.body) return json(404, { error: 'not found' });
-  const raw = event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString('utf8') : event.body;
+  const raw = Buffer.from(event.body, event.isBase64Encoded ? 'base64' : 'utf8');
   const res = await handleSkill({
-    skillId, verify,
+    skillId, verify, deadlineAt: started + BUDGET_MS,
     // Public demo copy only: this function's role can read PUB# keys and nothing else.
-    answer: async question => {
+    answer: async (question, signal) => {
       const days = (await Promise.all((await store.listPublished()).slice(0, 30).map(d => store.getPublished(d)))).filter(d => d !== null);
+      signal?.throwIfAborted();
       return ask({ question, days, converse });
     }
   }, event.headers ?? {}, raw);

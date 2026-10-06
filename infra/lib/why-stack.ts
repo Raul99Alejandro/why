@@ -147,8 +147,8 @@ export class WhyStack extends Stack {
     // Alexa skill endpoint (HTTPS Function URL). The URL is public by design: Alexa cannot sign with IAM,
     // so the function itself checks the Alexa certificate chain, signature, timestamp and skill id before
     // doing anything. Reads only the published copy (PUB#), like the demo. The skill id comes from
-    // `-c alexaSkillId=...` after the skill is created; without it every request is rejected.
-    const alexa = fn('Alexa', 'src/handlers/alexa.ts', Duration.seconds(10), { ALEXA_SKILL_ID: ctx('alexaSkillId') ?? '' });
+    // the `alexaSkillId` context (cdk.json, or -c) after the skill is created; without it every request is rejected.
+    const alexa = fn('Alexa', 'src/handlers/alexa.ts', Duration.seconds(8), { ALEXA_SKILL_ID: ctx('alexaSkillId') ?? '' });
     alexa.addToRolePolicy(new iam.PolicyStatement({
       actions: ['dynamodb:GetItem', 'dynamodb:Query'], resources: [table.tableArn],
       conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PUB#*'] } }
