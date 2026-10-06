@@ -7,3 +7,6 @@ data/
 .env
 .env.*
 *.log
+
+# ASK CLI local state
+.ask/
