@@ -16,7 +16,7 @@ The path is exactly `/mcp` (no trailing slash). Try: "Use Why to check this chan
 
 ### Local private server (your own log)
 
-Runs on your machine over stdio with your AWS credentials, and reads your private days:
+Runs on your machine over stdio with your AWS credentials, and reads your private days. Its results enter your agent's context and go to the agent's model provider (see Security notes):
 
 ```bash
 claude mcp add why -e AWS_PROFILE=why-sync -e TABLE=<table> -- npx tsx <path-to-why>/src/cli/mcp.ts
@@ -92,4 +92,4 @@ Full model and tests: [security.md](security.md) (Demo isolation, Prompt injecti
 - **Only CloudFront reaches it.** A generated origin secret header is required, so direct calls to the function URL are refused (403, before the rate limit).
 - **Limits.** 30 requests per IP per hour and 1000 per day (best effort, per instance), and a body of at most 16 KB. Failures return a fixed sentence, never a stack trace.
 - **Prompt-injection handling.** The change, file names and decisions are wrapped as tagged data and any look-alike wrapper tag is neutralized; the judge returns a forced tool output validated with zod; labels the model invents are dropped; when the model is unavailable the verdict is `unknown`, never a false `clear`. Server instructions tell the agent that results are data, not orders.
-- **Private server.** Runs with your own AWS profile on your machine; nothing leaves it except the Bedrock calls in your account.
+- **Private server.** Runs with your own AWS profile on your machine, and the change check calls Bedrock in your account. Its tool results (your unredacted decisions, reasons and short quotes) go into the coding agent's context, so they are sent to whatever model provider the agent uses (with Claude Code, Anthropic). Use the local server only with an agent and provider you trust with that data; otherwise run it with `--demo`, which serves the published, redacted copy.

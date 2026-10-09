@@ -33,7 +33,52 @@ describe('checkChange', () => {
     const m = fakeModel(() => ({ items: [{ label: 'D9', relation: 'conflicts', reason: 'x' }] }));
     expect(await checkChange({ src: nova, change: 'Switch to Sonnet', converse: m })).toEqual({ verdict: 'clear', conflicts: [] });
     const dup = fakeModel(() => ({ items: [{ label: 'D1', relation: 'refines', reason: 'a' }, { label: ' D1 ', relation: 'conflicts', reason: 'b' }] }));
-    expect((await checkChange({ src: nova, change: 'Switch to Sonnet', converse: dup })).conflicts).toHaveLength(1);
+    const out = await checkChange({ src: nova, change: 'Switch to Sonnet', converse: dup });
+    expect(out.conflicts).toHaveLength(1);
+    expect(out.conflicts[0]!.relation).toBe('conflicts'); // a repeat never downgrades: conflicts wins over refines
+    expect(out.conflicts[0]!.reason).toBe('b');
+    expect(out.verdict).toBe('conflicts');
+    const dupDown = fakeModel(() => ({ items: [{ label: 'D1', relation: 'conflicts', reason: 'a' }, { label: 'D1', relation: 'refines', reason: 'b' }] }));
+    const down = await checkChange({ src: nova, change: 'Switch to Sonnet', converse: dupDown });
+    expect(down.conflicts.map(c => [c.relation, c.reason])).toEqual([['conflicts', 'a']]);
+  });
+  it('matches labels case-insensitively', async () => {
+    const m = fakeModel(() => ({ items: [{ label: ' d1 ', relation: 'conflicts', reason: 'Nova was chosen.' }] }));
+    const out = await checkChange({ src: nova, change: 'Switch the answer model to Claude Sonnet', converse: m });
+    expect(out.verdict).toBe('conflicts');
+    expect(out.conflicts[0]!.decision.what).toBe('Use Nova for the answers');
+  });
+  it('never offers a decision that a later decision replaced', async () => {
+    let user = '';
+    const m = fakeModel((_t, _s, u) => { user = u; return { items: [] }; });
+    const a = { ...dec('Use Nova for the answers', 'cheap', 0), id: 'A', changedLater: { id: 'B', date: '2026-10-05' } };
+    const b = { ...dec('Use Claude Sonnet for the answers', 'better quality', 1), id: 'B' };
+    const out = await checkChange({ src: source([a, b]), change: 'keep Claude Sonnet for answers', converse: m });
+    expect(user).toContain('Use Claude Sonnet for the answers');
+    expect(user).not.toContain('Use Nova');
+    expect(user.match(/<decision /g)).toHaveLength(1);
+    expect(out.verdict).toBe('clear');
+    let calls = 0;
+    const only = fakeModel(() => { calls++; return { items: [] }; });
+    expect(await checkChange({ src: source([a]), change: 'anything', converse: only })).toEqual({ verdict: 'clear', conflicts: [] });
+    expect(calls).toBe(0);
+  });
+  it('ranks candidates on content words, not stop words, so a real conflict is not crowded out', async () => {
+    let user = '';
+    const m = fakeModel((_t, _s, u) => { user = u; return { items: [] }; });
+    const many = Array.from({ length: 40 }, (_, i) => dec(`Put the logs in the bucket for this n${i} to keep`, `it is by the way n${i}`, i));
+    many[39] = dec('Nova Lite model answers questions', 'cheap', 39); // the oldest, shares only content words
+    await checkChange({ src: source(many), change: 'Switch the model to Claude Sonnet for the answers in this app', converse: m });
+    expect(user.match(/<decision /g)).toHaveLength(MAX_CANDIDATES);
+    expect(user).toMatch(/<decision label="D1"[^>]*>Nova Lite model answers questions/);
+  });
+  it('fills the candidates with the most recent decisions when few share content words', async () => {
+    let user = '';
+    const m = fakeModel((_t, _s, u) => { user = u; return { items: [] }; });
+    const many = Array.from({ length: 20 }, (_, i) => dec(`Filler n${i}`, `x${i}`, i));
+    await checkChange({ src: source(many), change: 'Something else entirely', converse: m });
+    const labels = [...user.matchAll(/<decision label="D\d+"[^>]*>Filler (n\d+)/g)].map(x => x[1]);
+    expect(labels).toEqual(Array.from({ length: MAX_CANDIDATES }, (_, i) => `n${i}`));
   });
   it('clips the reason to 200 characters', async () => {
     const m = fakeModel(() => ({ items: [{ label: 'D1', relation: 'conflicts', reason: 'r'.repeat(300) }] }));

@@ -28,7 +28,7 @@ Why started as a daily decision log. It now acts while you work:
 | Ask by page, voice via the browser | Also **Alexa**: "what did we decide about ..." (skill and endpoint in the repo, simulator) |
 | A log for people | **Also for coding agents**: MCP tools check a planned change against past decisions, locally or through a public read-only endpoint ([docs/agents.md](docs/agents.md)) |
 | No quality number | A local labeling tool and `npm run accuracy` so precision and recall can be measured on a real day ([Measured accuracy](#measured-accuracy)) |
-| 151 tests | 304 tests, the domain rules (work filter, reversal, follow-up) written as approved examples in `domain/` |
+| 151 tests | 308 tests, the domain rules (work filter, reversal, follow-up) written as approved examples in `domain/` |
 
 ### Try the live demo, nothing to install
 
@@ -185,7 +185,7 @@ Each claim, how to check it yourself, and the evidence.
 | The MCP endpoint is live | `curl -s -X POST https://dxhdmlf1bzl03.cloudfront.net/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'` | Lists `why_check_change`, `why_explain_commit`, `why_search`, `why_ask`, `why_open_followups`; calls straight to the function URL are refused (403) |
 | The agent check finds conflicts (*synthetic, 12 cases*) | `npm run bench` (needs Bedrock access); cases in `test/agent/bench-cases.ts` | Run 2026-10-09 with `us.amazon.nova-2-lite-v1:0`: conflicts precision 1.00, recall 1.00, F1 1.00 (tp 5, fp 0, fn 0); overall accuracy 0.83 (10/12); both misses were clear cases judged as refines, the safe direction. 12 invented cases (5 conflicts, 3 refines, 4 clear), not real decisions |
 | Extraction quality on a real day | `npm run accuracy` after `npm run label` ([Measured accuracy](#measured-accuracy)) | Pending owner labels. No number is claimed until a real day is labeled |
-| The test suite passes | `npm test` | 304 tests passing |
+| The test suite passes | `npm test` | 308 tests passing |
 
 ## Measured accuracy
 
@@ -212,7 +212,7 @@ No number is claimed until the owner has labeled a day.
 
 What exists today:
 
-- Test suite: **304 tests**, passing (`npm test`), covering the MCP tools and the public endpoint, the analyzer, the work filter, reversal and follow-up logic with the approved domain examples, redaction, publishing, the API, the Alexa endpoint, the CDK stack's IAM and CloudFront settings, the labeling tool and the web renderer.
+- Test suite: **308 tests**, passing (`npm test`), covering the MCP tools and the public endpoint, the analyzer, the work filter, reversal and follow-up logic with the approved domain examples, redaction, publishing, the API, the Alexa endpoint, the CDK stack's IAM and CloudFront settings, the labeling tool and the web renderer.
 - Friction log and product feedback: [friction-log.md](friction-log.md), [docs/product-feedback.md](docs/product-feedback.md).
 - Security document with a test named for every control: [docs/security.md](docs/security.md).
 - `cdk-nag` AWS Solutions checks run on every synth; the stack synthesizes clean, with each suppression justified in `infra/lib/why-stack.ts`.
