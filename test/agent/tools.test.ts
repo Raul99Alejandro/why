@@ -58,4 +58,13 @@ describe('agent tools', () => {
     expect(await recentDecisions(publishedSource(store))).toEqual([]);
     await expect(privateSource(store).listDays()).rejects.toThrow('private');
   });
+  it('searches, explains and lists follow-ups only within the 30-day window', async () => {
+    const old: DayLog = { ...day5, date: '2020-01-01', decisions: [{ ...day5.decisions[0]!, sessionId: 'old' }], commits: day5.commits };
+    const filler = Array.from({ length: 30 }, (_, i): DayLog => ({ ...base, date: `2026-09-${String(i + 1).padStart(2, '0')}`, commits: [], decisions: [] }));
+    const s = mem([old, ...filler]);
+    expect(await searchDecisions(s, 'nova')).toEqual([]);
+    expect(await explainCommit(s, 'abc1234')).toEqual([]);
+    expect(await openFollowUps(s)).toEqual([]);
+    expect(await searchDecisions(mem([old, ...filler.slice(1)]), 'nova')).toHaveLength(1);
+  });
 });

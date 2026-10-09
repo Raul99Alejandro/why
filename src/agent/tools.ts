@@ -9,6 +9,8 @@ export type AgentDecision = {
 };
 
 const MAX_SEARCH = 20;
+/** Agents see the last 30 days of logs. */
+const WINDOW_DAYS = 30;
 
 /** Loads the newest `days` days and maps decisions field by field (never spread, so quoteOriginal cannot leak). */
 async function load(src: DaySource, days: number): Promise<AgentDecision[]> {
@@ -33,13 +35,13 @@ async function load(src: DaySource, days: number): Promise<AgentDecision[]> {
 }
 
 /** Decisions of the newest `days` days, newest day first. */
-export const recentDecisions = (src: DaySource, days = 30) => load(src, days);
+export const recentDecisions = (src: DaySource, days = WINDOW_DAYS) => load(src, days);
 
 /** Case-insensitive: every query token (longer than one char) appears in what, why, quote or commit messages. */
 export async function searchDecisions(src: DaySource, query: string): Promise<AgentDecision[]> {
   const tokens = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
   if (!tokens.length) return [];
-  const all = await load(src, Number.MAX_SAFE_INTEGER);
+  const all = await load(src, WINDOW_DAYS);
   return all.filter(d => {
     const hay = [d.what, d.why, d.quote, ...d.commits.map(c => c.message)].join(' ').toLowerCase();
     return tokens.every(t => hay.includes(t));
@@ -51,11 +53,11 @@ export async function explainCommit(src: DaySource, sha: string, repo?: string):
   const s = sha.toLowerCase();
   if (!s) return [];
   const hit = (c: CommitRef) => !!c.sha && (!repo || c.repo === repo) && (c.sha.toLowerCase().startsWith(s) || s.startsWith(c.sha.toLowerCase()));
-  const all = await load(src, Number.MAX_SAFE_INTEGER);
+  const all = await load(src, WINDOW_DAYS);
   return all.filter(d => d.commits.some(hit) || (d.followUp?.closedBy && hit(d.followUp.closedBy)));
 }
 
 /** Decisions whose follow-up is still open. */
 export async function openFollowUps(src: DaySource): Promise<AgentDecision[]> {
-  return (await load(src, Number.MAX_SAFE_INTEGER)).filter(d => d.followUp?.status === 'open');
+  return (await load(src, WINDOW_DAYS)).filter(d => d.followUp?.status === 'open');
 }
