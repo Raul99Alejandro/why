@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 import { ask } from '../ask.js';
@@ -8,7 +7,8 @@ import { checkChange } from './check.js';
 import type { DaySource } from './source.js';
 import { explainCommit, openFollowUps, searchDecisions, WINDOW_DAYS } from './tools.js';
 
-const version = (JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string }).version;
+/** Kept in sync with package.json by a test; no file read, so the module bundles into a single-file Lambda. */
+export const SERVER_VERSION = '0.1.0';
 
 const INSTRUCTIONS = 'Why is a log of the decisions a team made while working (what was decided, why, and which commits followed), built from their work sessions. '
   + 'Use it to check a planned change against past decisions and to learn why code is the way it is. '
@@ -20,7 +20,7 @@ const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: 
 /** The Why decision log as an MCP server. All tools are read-only and never return the original-language quote. */
 export function createWhyServer(opts: { src: DaySource; converse: ConverseFn; label: 'private' | 'demo' }): McpServer {
   const { src, converse, label } = opts;
-  const server = new McpServer({ name: 'why', version }, { instructions: `${INSTRUCTIONS} This server reads the ${label} log.` });
+  const server = new McpServer({ name: 'why', version: SERVER_VERSION }, { instructions: `${INSTRUCTIONS} This server reads the ${label} log.` });
 
   server.registerTool('why_check_change', {
     title: 'Check a change against past decisions',

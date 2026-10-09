@@ -3,7 +3,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { DayLog } from '../../src/domain/types.js';
 import type { DaySource } from '../../src/agent/source.js';
-import { createWhyServer } from '../../src/agent/server.js';
+import { readFileSync } from 'node:fs';
+import { createWhyServer, SERVER_VERSION } from '../../src/agent/server.js';
 import { fakeModel } from '../helpers/fakes.js';
 
 const base = { summary: '', sessions: [], todos: [], openQuestions: [], updatedAt: '' };
@@ -22,6 +23,9 @@ async function connect(model = fakeModel(() => ({ items: [] }))) {
 const text = (r: unknown) => JSON.stringify(r);
 
 describe('Why MCP server', () => {
+  it('reports the package.json version', () => {
+    expect(SERVER_VERSION).toBe((JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string }).version);
+  });
   it('lists the five tools, read-only', async () => {
     const { tools } = await (await connect()).listTools();
     expect(tools.map(t => t.name).sort()).toEqual(['why_ask', 'why_check_change', 'why_explain_commit', 'why_open_followups', 'why_search']);
