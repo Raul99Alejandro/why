@@ -15,6 +15,7 @@ Severity: **blocker** (stopped us until we changed the design), **major** (cost 
 - **Severity:** blocker for the first design.
 - **Workaround:** We split a conversation into sessions at pauses longer than 20 minutes and treat a session as finished when its last utterance is more than 30 minutes old (`splitSessions`, session id = conversation id plus first-utterance epoch).
 - **Suggestion:** Document when a conversation ends (silence timeout, device, time), or expose a stable per-recording id and timestamp so clients do not have to guess session boundaries.
+- **Upstream:** reported to Bee as [bee-computer/bee-cli issue 21](https://github.com/bee-computer/bee-cli/issues/21).
 
 ### 2. The documented shape and the real JSON differed
 
