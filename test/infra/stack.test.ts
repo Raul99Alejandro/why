@@ -176,6 +176,25 @@ describe('Why stack', () => {
     const fn = t.findResources('AWS::Lambda::Function')[fnId(t, 'Mcp')]!;
     expect(fn.Properties.Timeout).toBe(30);
   });
+  it('lets only CloudFront reach the MCP function: a generated origin secret, passed as a dynamic reference', () => {
+    const secrets = Object.entries(t.findResources('AWS::SecretsManager::Secret')).filter(([id]) => id.startsWith('McpOriginSecret'));
+    expect(secrets).toHaveLength(1);
+    const [secretId, secret] = secrets[0]!;
+    expect(secret.Properties.SecretString).toBeUndefined();
+    expect(secret.Properties.GenerateSecretString).toMatchObject({ PasswordLength: 32, ExcludePunctuation: true });
+    const ref = JSON.stringify({ 'Fn::Join': ['', ['{{resolve:secretsmanager:', { Ref: secretId }, ':SecretString:::}}']] });
+    const dist = Object.values(t.findResources('AWS::CloudFront::Distribution'))[0]!.Properties.DistributionConfig;
+    const mcp = (dist.CacheBehaviors as { PathPattern: string; TargetOriginId: string }[]).find(b => b.PathPattern === '/mcp')!;
+    const origin = (dist.Origins as { Id: string; OriginCustomHeaders?: { HeaderName: string; HeaderValue: unknown }[] }[]).find(o => o.Id === mcp.TargetOriginId)!;
+    expect(origin.OriginCustomHeaders).toHaveLength(1);
+    expect(origin.OriginCustomHeaders![0]!.HeaderName).toBe('x-why-origin');
+    expect(JSON.stringify(origin.OriginCustomHeaders![0]!.HeaderValue)).toBe(ref);
+    const fn = t.findResources('AWS::Lambda::Function')[fnId(t, 'Mcp')]!;
+    expect(JSON.stringify(fn.Properties.Environment.Variables.ORIGIN_SECRET)).toBe(ref);
+    // No other origin carries the header, and no function but Mcp gets the secret.
+    expect(dist.Origins.filter((o: { OriginCustomHeaders?: unknown }) => o.OriginCustomHeaders)).toHaveLength(1);
+    expect(Object.values(t.findResources('AWS::Lambda::Function')).filter(f => JSON.stringify(f).includes(secretId))).toHaveLength(1);
+  });
   it('gives the demo function no reserved concurrency', () => {
     for (const fn of Object.values(t.findResources('AWS::Lambda::Function'))) expect(fn.Properties.ReservedConcurrentExecutions).toBeUndefined();
   });
@@ -185,7 +204,7 @@ describe('Why stack in cli mode', () => {
   const t = build('cli');
   it('has no schedule, no Bee secret and one alarm on the API errors', () => {
     t.resourceCountIs('AWS::Scheduler::Schedule', 0);
-    t.resourceCountIs('AWS::SecretsManager::Secret', 0);
+    expect(Object.keys(t.findResources('AWS::SecretsManager::Secret')).filter(id => !id.startsWith('McpOriginSecret'))).toEqual([]);
     t.resourceCountIs('AWS::CloudWatch::Alarm', 1);
     t.hasResourceProperties('AWS::CloudWatch::Alarm', { MetricName: 'Errors', Threshold: 5, Period: 3600, EvaluationPeriods: 1 });
     expect(JSON.stringify(t.findResources('AWS::IAM::Policy'))).not.toContain('secretsmanager');

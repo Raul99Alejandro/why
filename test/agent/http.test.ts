@@ -12,13 +12,14 @@ const day: DayLog = { ...base, date: '2026-10-05', commits: [], decisions: [
 ] };
 const src: DaySource = { listDays: async () => [day.date], getDay: async d => (d === day.date ? day : null) };
 const now = () => new Date('2026-10-09T12:00:00Z');
+const SECRET = 'origin-secret-0123456789abcdefghij';
 
 const make = (opts: { limits?: Limits; src?: DaySource } = {}) =>
-  createMcpHandler({ src: opts.src ?? src, converse: fakeModel(() => ({ items: [] })), limits: opts.limits ?? new Limits(30, 1000), now });
+  createMcpHandler({ src: opts.src ?? src, converse: fakeModel(() => ({ items: [] })), limits: opts.limits ?? new Limits(30, 1000), now, originSecret: SECRET });
 
 const event = (method: string, body?: string, headers: Record<string, string> = {}, ip = '1.2.3.4'): UrlEvent => ({
   requestContext: { http: { method, sourceIp: '9.9.9.9' } }, rawPath: '/mcp',
-  headers: { 'content-type': 'application/json', 'x-forwarded-for': `10.0.0.1, ${ip}`, ...headers }, ...(body === undefined ? {} : { body })
+  headers: { 'content-type': 'application/json', 'x-forwarded-for': `10.0.0.1, ${ip}`, 'x-why-origin': SECRET, ...headers }, ...(body === undefined ? {} : { body })
 });
 const rpc = (id: number, method: string, params: object = {}) => JSON.stringify({ jsonrpc: '2.0', id, method, params });
 const init = rpc(1, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } });
@@ -48,6 +49,21 @@ describe('public MCP endpoint', () => {
     e.isBase64Encoded = true;
     const r = await make()(e);
     expect(json(r).result.tools).toHaveLength(5);
+  });
+  it('answers 403 with no detail when the CloudFront origin header is missing or wrong, before the rate limit', async () => {
+    const h = make({ limits: new Limits(1, 1000) });
+    const missing = event('POST', rpc(2, 'tools/list'));
+    delete missing.headers!['x-why-origin'];
+    for (const e of [missing, event('POST', rpc(2, 'tools/list'), { 'x-why-origin': 'wrong' }), event('POST', rpc(2, 'tools/list'), { 'x-why-origin': SECRET.replace(/.$/, 'X') }), event('GET', undefined, { 'x-why-origin': '' })]) {
+      const r = await h(e);
+      expect(r.statusCode).toBe(403);
+      expect(json(r)).toEqual({ error: 'forbidden' });
+    }
+    expect((await h(event('POST', rpc(2, 'tools/list')))).statusCode).toBe(200);
+  });
+  it('rejects everything when no origin secret is configured', async () => {
+    const h = createMcpHandler({ src, converse: fakeModel(() => ({ items: [] })), limits: new Limits(30, 1000), now, originSecret: '' });
+    expect((await h(event('POST', rpc(2, 'tools/list'), { 'x-why-origin': '' }))).statusCode).toBe(403);
   });
   it('rejects GET and DELETE with 405', async () => {
     for (const m of ['GET', 'DELETE']) {

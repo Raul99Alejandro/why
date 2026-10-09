@@ -164,8 +164,17 @@ export class WhyStack extends Stack {
     // Public MCP endpoint (Streamable HTTP, stateless) over the published copy, for coding agents.
     // Same read rights as the demo minus Polly. Its URL is public (auth NONE, no OAC): CloudFront OAC
     // signs POSTs to a Function URL only when the viewer sends x-amz-content-sha256, which MCP clients
-    // never do. The function rate-limits per IP and per day and reads only PUB# keys.
-    const mcp = fn('Mcp', 'src/handlers/mcp.ts', Duration.seconds(30), {});
+    // never do. So CloudFront adds a generated secret header (x-why-origin) and the function refuses
+    // requests without it; the value reaches CloudFront and the function as a CloudFormation dynamic
+    // reference, never as a literal in the template. The function also rate-limits and reads only PUB#.
+    const originSecret = new secretsmanager.Secret(this, 'McpOriginSecret', {
+      description: 'Why: header CloudFront adds on /mcp so the public MCP function URL refuses direct calls',
+      generateSecretString: { passwordLength: 32, excludePunctuation: true }, removalPolicy: RemovalPolicy.DESTROY
+    });
+    NagSuppressions.addResourceSuppressions(originSecret, [{ id: 'AwsSolutions-SMG4',
+      reason: 'Origin-verification value read only at deploy time (dynamic reference into CloudFront and the function); rotating it needs a redeploy, which a rotation Lambda cannot do.' }]);
+    const originValue = originSecret.secretValue.unsafeUnwrap();
+    const mcp = fn('Mcp', 'src/handlers/mcp.ts', Duration.seconds(30), { ORIGIN_SECRET: originValue });
     mcp.addToRolePolicy(new iam.PolicyStatement({
       actions: ['dynamodb:GetItem', 'dynamodb:Query'], resources: [table.tableArn],
       conditions: { 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PUB#*'] } }
@@ -278,7 +287,7 @@ export class WhyStack extends Stack {
       additionalBehaviors: {
         '/api/demo/*': apiBehavior(demoUrl), '/api/*': apiBehavior(apiUrl),
         '/mcp': {
-          origin: new origins.FunctionUrlOrigin(mcpUrl), viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
+          origin: new origins.FunctionUrlOrigin(mcpUrl, { customHeaders: { 'x-why-origin': originValue } }), viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL, cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
           originRequestPolicy: mcpForward, responseHeadersPolicy: headers
         }
