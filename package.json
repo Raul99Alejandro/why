@@ -20,7 +20,8 @@
     "domain:check": "node scripts/check-domain.mjs",
     "label": "tsx src/cli/label.ts",
     "accuracy": "tsx src/cli/accuracy.ts",
-    "bench": "tsx scripts/bench-check.ts"
+    "bench": "tsx scripts/bench-check.ts",
+    "mcp": "tsx src/cli/mcp.ts"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1141.0",
@@ -28,6 +29,7 @@
     "@aws-sdk/client-polly": "^3.1141.0",
     "@aws-sdk/client-secrets-manager": "^3.1141.0",
     "@aws-sdk/lib-dynamodb": "^3.1141.0",
+    "@modelcontextprotocol/sdk": "1.30.1",
     "aws-jwt-verify": "^5.0.0",
     "zod": "^4.2"
   },

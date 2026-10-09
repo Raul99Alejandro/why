@@ -10,7 +10,7 @@ export type AgentDecision = {
 
 const MAX_SEARCH = 20;
 /** Agents see the last 30 days of logs. */
-const WINDOW_DAYS = 30;
+export const WINDOW_DAYS = 30;
 
 /** Loads the newest `days` days and maps decisions field by field (never spread, so quoteOriginal cannot leak). */
 async function load(src: DaySource, days: number): Promise<AgentDecision[]> {
