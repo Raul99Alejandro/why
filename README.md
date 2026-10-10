@@ -9,11 +9,12 @@ Why listens (through a [Bee](https://bee.computer) wearable) to the owner's real
 ### Judges' quick path (3 minutes)
 
 1. **Open the [demo](https://dxhdmlf1bzl03.cloudfront.net/?demo)** and read one day: decisions, the reason for each, a short quote, linked commits, and the line "N personal conversations ignored".
-2. Look for a **Changed** badge: a decision that directly contradicts an earlier one, with both days linked and the old decision's commits listed as "work that may need undoing". Follow-ups show **open** or **closed by a commit**.
-3. **Ask** by voice or text: "What did I decide about ...?" The answer cites its sources; an unknown topic gets "I couldn't find that", never an invented answer.
-4. **Alexa**: the same question out loud through the skill "Why decisions" (steps in [Ask Alexa](#ask-alexa); it runs in the developer console simulator).
-5. **Bee itself**: the reversal alert and the follow-ups are Bee todos in the owner's own Bee app (see [How reversal alerts and Bee todos work](#how-reversal-alerts-and-bee-todos-work)); the [video](docs/video-script.md) script shows them arriving.
-6. Evidence: [docs/security.md](docs/security.md), [friction-log.md](friction-log.md), [docs/product-feedback.md](docs/product-feedback.md), and [Measured accuracy](#measured-accuracy).
+2. **For coding agents**: connect Claude Code to the live demo with one command, `claude mcp add --transport http why-demo https://dxhdmlf1bzl03.cloudfront.net/mcp`, then ask it: "Use Why to check this change: switch the answer model to Claude Sonnet." It calls `why_check_change` and reports any past decision the change would contradict (setup and the five tools: [docs/agents.md](docs/agents.md)).
+3. Look for a **Changed** badge: a decision that directly contradicts an earlier one, with both days linked and the old decision's commits listed as "work that may need undoing". Follow-ups show **open** or **closed by a commit**.
+4. **Ask** by voice or text: "What did I decide about ...?" The answer cites its sources; an unknown topic gets "I couldn't find that", never an invented answer.
+5. **Alexa**: the same question out loud through the skill "Why decisions" (steps in [Ask Alexa](#ask-alexa); it runs in the developer console simulator).
+6. **Bee itself**: the reversal alert and the follow-ups are Bee todos in the owner's own Bee app (see [How reversal alerts and Bee todos work](#how-reversal-alerts-and-bee-todos-work)); the [video](docs/video-script.md) script shows them arriving.
+7. Evidence: [docs/security.md](docs/security.md), [friction-log.md](friction-log.md), [docs/product-feedback.md](docs/product-feedback.md), the [Verified](#verified) table, and [Measured accuracy](#measured-accuracy).
 
 ### What changed since 3 October
 
@@ -25,8 +26,9 @@ Why started as a daily decision log. It now acts while you work:
 | A log you read afterwards | **Reversal alerts**: when a new decision directly contradicts an earlier one, Why writes a todo into Bee ("You changed your mind about X: old -> new. Confirm?") with an alarm 10 minutes later |
 | Pending items were text on a page | **Follow-ups written to Bee as todos**, completed by Why when a matching public commit lands |
 | Ask by page, voice via the browser | Also **Alexa**: "what did we decide about ..." (skill and endpoint in the repo, simulator) |
+| A log for people | **Also for coding agents**: MCP tools check a planned change against past decisions, locally or through a public read-only endpoint ([docs/agents.md](docs/agents.md)) |
 | No quality number | A local labeling tool and `npm run accuracy` so precision and recall can be measured on a real day ([Measured accuracy](#measured-accuracy)) |
-| 151 tests | 261 tests, the domain rules (work filter, reversal, follow-up) written as approved examples in `domain/` |
+| 151 tests | 308 tests, the domain rules (work filter, reversal, follow-up) written as approved examples in `domain/` |
 
 ### Try the live demo, nothing to install
 
@@ -169,6 +171,22 @@ The data is a person's spoken conversations, so the design starts from the worst
 
 Full threat model, each control with the code that implements it and the test that proves it: **[docs/security.md](docs/security.md)**. How Bee's API behaves, as investigated for this project: [docs/bee-api.md](docs/bee-api.md).
 
+## Verified
+
+Each claim, how to check it yourself, and the evidence.
+
+| Claim | How to check | Evidence |
+| --- | --- | --- |
+| Why runs on real Bee data, and we recorded how Bee really behaves | Read the friction log and [docs/bee-api.md](docs/bee-api.md) | [friction-log.md](friction-log.md) entries 1 to 7 give observed shapes (a conversation stuck `CAPTURING` for 20+ hours, `transcriptions[].utterances`, the private CA); entry 1 is reported upstream: [bee-cli issue 21](https://github.com/bee-computer/bee-cli/issues/21) |
+| Reversal alerts arrive as Bee todos | `npx vitest run test/ledger.test.ts test/ledger-safety.test.ts test/bee/todos.test.ts`; watch the video | Tests `creates todos and reports counts only, and survives a Bee outage` and `saves the todo as creating before calling Bee`; [video script](docs/video-script.md) shot 4 (0:45 to 1:12) |
+| Follow-ups close when a matching commit lands | `npx vitest run test/ledger.test.ts` | `judges a commit once per follow-up, ignores older commits, and shows closed on the page data`; video shot 6 (1:22 to 1:42) |
+| Personal speech is discarded before storage | `npx vitest run test/workfilter.test.ts`; read the Data minimization section of [docs/security.md](docs/security.md) | Work-hours and work-or-personal check tests in `test/workfilter.test.ts`; only a counter is stored |
+| The public demo reads only `PUB#` keys | `npx vitest run test/infra/stack.test.ts`; read the Least privilege section of [docs/security.md](docs/security.md) | The demo and MCP functions' IAM statements carry the condition `dynamodb:LeadingKeys` = `PUB#*`, with `GetItem`/`Query` only (`test/infra/stack.test.ts`) |
+| The MCP endpoint is live | `curl -s -X POST https://dxhdmlf1bzl03.cloudfront.net/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'` | Lists `why_check_change`, `why_explain_commit`, `why_search`, `why_ask`, `why_open_followups`; calls straight to the function URL are refused (403) |
+| The agent check finds conflicts (*synthetic, 12 cases*) | `npm run bench` (needs Bedrock access); cases in `test/agent/bench-cases.ts` | Run 2026-10-09 with `us.amazon.nova-2-lite-v1:0`: conflicts precision 1.00, recall 1.00, F1 1.00 (tp 5, fp 0, fn 0); overall accuracy 0.83 (10/12); both misses were clear cases judged as refines, the safe direction. 12 invented cases (5 conflicts, 3 refines, 4 clear), not real decisions |
+| Extraction quality on a real day | `npm run accuracy` after `npm run label` ([Measured accuracy](#measured-accuracy)) | Pending owner labels. No number is claimed until a real day is labeled |
+| The test suite passes | `npm test` | 308 tests passing |
+
 ## Measured accuracy
 
 Does Why find the decisions a person really made? `npm run label` and `npm run accuracy` measure it on one real day, locally:
@@ -194,7 +212,7 @@ No number is claimed until the owner has labeled a day.
 
 What exists today:
 
-- Test suite: **261 tests**, passing (`npx vitest run`), covering the analyzer, the work filter, reversal and follow-up logic with the approved domain examples, redaction, publishing, the API, the Alexa endpoint, the CDK stack's IAM and CloudFront settings, the labeling tool and the web renderer.
+- Test suite: **308 tests**, passing (`npm test`), covering the MCP tools and the public endpoint, the analyzer, the work filter, reversal and follow-up logic with the approved domain examples, redaction, publishing, the API, the Alexa endpoint, the CDK stack's IAM and CloudFront settings, the labeling tool and the web renderer.
 - Friction log and product feedback: [friction-log.md](friction-log.md), [docs/product-feedback.md](docs/product-feedback.md).
 - Security document with a test named for every control: [docs/security.md](docs/security.md).
 - `cdk-nag` AWS Solutions checks run on every synth; the stack synthesizes clean, with each suppression justified in `infra/lib/why-stack.ts`.
@@ -270,6 +288,7 @@ src/
   workfilter.ts                                    work hours and the work-or-personal classifier
   relate.ts, ledger.ts, bee/todos.ts               reversal judge, decision ledger, Bee todos
   alexa/                                           Alexa request verification and the skill
+  agent/                                           MCP tools for coding agents (check, explain, search, ask, follow-ups) and the check benchmark
   label/, cli/label.ts, cli/accuracy.ts            local labeling page and accuracy numbers (never deployed)
   redact.ts, untrusted.ts                          redaction and prompt-injection defenses
   ask.ts, speech.ts, nova.ts, github.ts            Ask, Polly, Bedrock client, commit lookup
@@ -278,6 +297,7 @@ src/
   store/                                           DynamoDB and in-memory stores
   handlers/                                        Lambda entry points (api, demo, sync)
   cli/sync.ts                                      the owner's local sync
+skills/why/SKILL.md                                Agent Skill: when a coding agent should ask Why (setup: docs/agents.md)
 domain/                                            glossary and rules (work filter, reversals, follow-ups) with examples
 web/                                               browser UI (Vite, TypeScript), with a mock backend
 infra/                                             CDK app and the single stack (+ cdk-nag)

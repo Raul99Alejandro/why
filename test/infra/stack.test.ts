@@ -11,6 +11,8 @@ writeFileSync(join(webDir, 'index.html'), '<!doctype html><title>Why</title>');
 
 const build = (beeMode: 'http' | 'cli') => Template.fromStack(new WhyStack(new App({ context: { ownerEmail: 'owner@example.com', repos: 'o/r', beeMode, beeBaseUrl: 'https://bee.example' } }), 'Test', { env: { account: '111111111111', region: 'us-east-1' }, webDir }));
 const template = () => build('http');
+const fnId = (t: Template, prefix: string) => Object.keys(t.findResources('AWS::Lambda::Function')).find(id => id.startsWith(prefix))!;
+const fnUrlId = (t: Template, prefix: string) => Object.keys(t.findResources('AWS::Lambda::Url')).find(id => id.startsWith(prefix))!;
 
 describe('Why stack', () => {
   const t = template();
@@ -112,10 +114,10 @@ describe('Why stack', () => {
     expect(headers.length).toBeGreaterThan(0);
     for (const h of headers) expect(h.toLowerCase()).not.toMatch(/^(authorization|host|x-amz-.*)$/);
   });
-  it('routes /api/demo/* before /api/*, uncached', () => {
+  it('routes /api/demo/* before /api/*, and /mcp, uncached', () => {
     const dist = Object.values(t.findResources('AWS::CloudFront::Distribution'))[0]!;
     const behaviors = dist.Properties.DistributionConfig.CacheBehaviors as { PathPattern: string; CachePolicyId: string }[];
-    expect(behaviors.map(b => b.PathPattern)).toEqual(['/api/demo/*', '/api/*']);
+    expect(behaviors.map(b => b.PathPattern)).toEqual(['/api/demo/*', '/api/*', '/mcp']);
     for (const b of behaviors) expect(b.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
   });
   it('lets every function, CDK helpers included, write its logs, with 1-month retention where we own the group', () => {
@@ -139,9 +141,59 @@ describe('Why stack', () => {
     expect(policy).toContain('"kms:ViaService":"dynamodb.us-east-1.amazonaws.com"');
     expect(policy).not.toMatch(/dynamodb:(Scan|PutItem|UpdateItem|DeleteItem|BatchWriteItem)|secretsmanager|polly/);
     const urls = Object.values(t.findResources('AWS::Lambda::Url', { Properties: { AuthType: 'NONE' } }));
-    expect(urls).toHaveLength(1);
+    expect(urls.map(u => u.Properties.TargetFunctionArn['Fn::GetAtt'][0]).sort()).toEqual([fnId(t, 'Alexa'), fnId(t, 'Mcp')]);
     const alexa = Object.entries(t.findResources('AWS::Lambda::Function')).find(([id]) => id.startsWith('Alexa'))![1];
     expect(alexa.Properties.Timeout).toBe(8);
+  });
+  it('serves MCP from a function that reads only published keys and cannot scan, write, speak or read secrets', () => {
+    type Statement = { Action: string | string[]; Condition?: unknown };
+    const policies = Object.entries(t.findResources('AWS::IAM::Policy')).filter(([id]) => /^Mcp/.test(id));
+    expect(policies).toHaveLength(1);
+    const statements = policies[0]![1].Properties.PolicyDocument.Statement as Statement[];
+    const ddb = statements.filter(st => [st.Action].flat().some(a => a.startsWith('dynamodb:')));
+    expect(ddb.length).toBeGreaterThan(0);
+    for (const st of ddb) {
+      expect([st.Action].flat().sort()).toEqual(['dynamodb:GetItem', 'dynamodb:Query']);
+      expect(st.Condition).toEqual({ 'ForAllValues:StringLike': { 'dynamodb:LeadingKeys': ['PUB#*'] } });
+    }
+    const json = JSON.stringify(statements);
+    expect(json).toContain('"kms:ViaService":"dynamodb.us-east-1.amazonaws.com"');
+    expect(json).toContain('bedrock:InvokeModel');
+    expect(json).not.toMatch(/dynamodb:(Scan|PutItem|UpdateItem|DeleteItem|BatchWriteItem)|secretsmanager|polly/);
+  });
+  it('sends /mcp to the MCP function URL without OAC, forwarding the MCP headers, and outputs its address', () => {
+    const dist = Object.values(t.findResources('AWS::CloudFront::Distribution'))[0]!.Properties.DistributionConfig;
+    const mcp = (dist.CacheBehaviors as { PathPattern: string; TargetOriginId: string; AllowedMethods: string[]; ViewerProtocolPolicy: string; OriginRequestPolicyId: { Ref: string } }[]).find(b => b.PathPattern === '/mcp')!;
+    expect(mcp.AllowedMethods).toContain('POST');
+    expect(mcp.ViewerProtocolPolicy).toBe('https-only');
+    const origin = (dist.Origins as { Id: string; DomainName: unknown; OriginAccessControlId?: unknown }[]).find(o => o.Id === mcp.TargetOriginId)!;
+    expect(origin.OriginAccessControlId).toBeUndefined();
+    expect(JSON.stringify(origin.DomainName)).toContain(fnUrlId(t, 'Mcp'));
+    const policy = t.findResources('AWS::CloudFront::OriginRequestPolicy')[mcp.OriginRequestPolicyId.Ref]!;
+    expect(policy.Properties.OriginRequestPolicyConfig.HeadersConfig.Headers.sort()).toEqual(['accept', 'content-type', 'mcp-protocol-version']);
+    expect(policy.Properties.OriginRequestPolicyConfig.CookiesConfig).toEqual({ CookieBehavior: 'none' });
+    expect(JSON.stringify(t.toJSON().Outputs.McpUrl.Value)).toContain('mcp');
+    const fn = t.findResources('AWS::Lambda::Function')[fnId(t, 'Mcp')]!;
+    expect(fn.Properties.Timeout).toBe(30);
+  });
+  it('lets only CloudFront reach the MCP function: a generated origin secret, passed as a dynamic reference', () => {
+    const secrets = Object.entries(t.findResources('AWS::SecretsManager::Secret')).filter(([id]) => id.startsWith('McpOriginSecret'));
+    expect(secrets).toHaveLength(1);
+    const [secretId, secret] = secrets[0]!;
+    expect(secret.Properties.SecretString).toBeUndefined();
+    expect(secret.Properties.GenerateSecretString).toMatchObject({ PasswordLength: 32, ExcludePunctuation: true });
+    const ref = JSON.stringify({ 'Fn::Join': ['', ['{{resolve:secretsmanager:', { Ref: secretId }, ':SecretString:::}}']] });
+    const dist = Object.values(t.findResources('AWS::CloudFront::Distribution'))[0]!.Properties.DistributionConfig;
+    const mcp = (dist.CacheBehaviors as { PathPattern: string; TargetOriginId: string }[]).find(b => b.PathPattern === '/mcp')!;
+    const origin = (dist.Origins as { Id: string; OriginCustomHeaders?: { HeaderName: string; HeaderValue: unknown }[] }[]).find(o => o.Id === mcp.TargetOriginId)!;
+    expect(origin.OriginCustomHeaders).toHaveLength(1);
+    expect(origin.OriginCustomHeaders![0]!.HeaderName).toBe('x-why-origin');
+    expect(JSON.stringify(origin.OriginCustomHeaders![0]!.HeaderValue)).toBe(ref);
+    const fn = t.findResources('AWS::Lambda::Function')[fnId(t, 'Mcp')]!;
+    expect(JSON.stringify(fn.Properties.Environment.Variables.ORIGIN_SECRET)).toBe(ref);
+    // No other origin carries the header, and no function but Mcp gets the secret.
+    expect(dist.Origins.filter((o: { OriginCustomHeaders?: unknown }) => o.OriginCustomHeaders)).toHaveLength(1);
+    expect(Object.values(t.findResources('AWS::Lambda::Function')).filter(f => JSON.stringify(f).includes(secretId))).toHaveLength(1);
   });
   it('gives the demo function no reserved concurrency', () => {
     for (const fn of Object.values(t.findResources('AWS::Lambda::Function'))) expect(fn.Properties.ReservedConcurrentExecutions).toBeUndefined();
@@ -152,7 +204,7 @@ describe('Why stack in cli mode', () => {
   const t = build('cli');
   it('has no schedule, no Bee secret and one alarm on the API errors', () => {
     t.resourceCountIs('AWS::Scheduler::Schedule', 0);
-    t.resourceCountIs('AWS::SecretsManager::Secret', 0);
+    expect(Object.keys(t.findResources('AWS::SecretsManager::Secret')).filter(id => !id.startsWith('McpOriginSecret'))).toEqual([]);
     t.resourceCountIs('AWS::CloudWatch::Alarm', 1);
     t.hasResourceProperties('AWS::CloudWatch::Alarm', { MetricName: 'Errors', Threshold: 5, Period: 3600, EvaluationPeriods: 1 });
     expect(JSON.stringify(t.findResources('AWS::IAM::Policy'))).not.toContain('secretsmanager');
@@ -193,5 +245,5 @@ describe('Why stack in http mode', () => {
     const t = build('http');
     t.resourceCountIs('AWS::IAM::User', 0);
     expect(Object.keys(t.toJSON().Outputs ?? {})).not.toContain('SyncUserName');
-  });
+  }, 60_000); // builds a whole stack (bundling included) inside the test, which can pass 20 s under a full run
 });

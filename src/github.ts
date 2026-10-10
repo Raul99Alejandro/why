@@ -3,7 +3,7 @@ import type { CommitRef } from './domain/types.js';
 import { log } from './log.js';
 
 /** Validates repo name format: owner/name where neither segment is only dots. */
-const repoRegex = /^(?!\.+\/)[\w.-]+\/(?!\.+$)[\w.-]+$/;
+export const repoRegex = /^(?!\.+\/)[\w.-]+\/(?!\.+$)[\w.-]+$/;
 
 /** Public commits of the given repos on a local day (GitHub API without a token: 60 requests an hour is plenty). */
 export async function commitsOn(day: string, repos: string[], timeZone: string, fetchFn: typeof fetch = fetch): Promise<CommitRef[]> {
