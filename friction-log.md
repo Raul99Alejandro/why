@@ -1,6 +1,6 @@
 # Friction log
 
-Real problems hit while building Why (3 to 6 October 2026), in the order we met them. Every entry comes from this project's own build ledger and notes (`docs/bee-api.md`, commit history); nothing here is invented. Format: task, steps, expected vs actual, severity, workaround, suggestion.
+Real problems hit while building Why (3 to 6 October 2026, plus later device use), in the order we met them. Every entry comes from this project's own build ledger and notes (`docs/bee-api.md`, commit history); nothing here is invented. Format: task, steps, expected vs actual, severity, workaround, suggestion.
 
 Severity: **blocker** (stopped us until we changed the design), **major** (cost hours or forced a redesign of one part), **minor** (small cost, easy workaround).
 
@@ -150,6 +150,18 @@ Severity: **blocker** (stopped us until we changed the design), **major** (cost 
 - **Severity:** minor (found in review).
 - **Workaround:** Tags are neutralised, the model has no actions beyond one forced tool, and answers need valid citations.
 - **Suggestion:** Document a recommended wrapper pattern for untrusted text with forced tool use.
+
+## Bee on Apple Watch
+
+### 15. Starting to listen on the watch falls back to mute
+
+- **Task:** Record work conversations with the Bee app on Apple Watch (15 October 2026, after some days without the watch app active).
+- **Steps:** Open Bee on the watch and tap to start listening.
+- **Expected:** One tap starts listening and it stays on.
+- **Actual:** Listening starts, then switches to mute by itself almost at once; the control looks stuck, and it takes several taps before it stays unmuted. Seen by the owner on the device; not yet timed or counted, and no logs captured.
+- **Severity:** major for ambient capture: a silent fallback to mute loses the conversation the user thinks is being recorded.
+- **Workaround:** Tap again until the watch shows it is listening, and check it before an important conversation.
+- **Suggestion:** Make the mute state change only on an explicit tap, and show a clear "not listening" state or haptic when it does.
 
 ## Process note
 
