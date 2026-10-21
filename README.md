@@ -8,7 +8,7 @@ Why listens (through a [Bee](https://bee.computer) wearable) to the owner's real
 
 ### Judges' quick path (3 minutes)
 
-0. **Watch the [video](VIDEO_URL)** (under 3 minutes, real product and real data).
+0. **Watch the [video](https://youtu.be/QvHZs4ZkVLc)** (under 3 minutes, real product and real data).
 1. **Open the [demo](https://dxhdmlf1bzl03.cloudfront.net/?demo)** and read a real day (start with Tue Oct 20): decisions, the reason for each, pending items, open questions, and the line "N personal conversations ignored". Four real work days (7, 9, 15 and 20 October 2026) are published.
 2. **For coding agents**: connect Claude Code to the live demo with one command, `claude mcp add --transport http why-demo https://dxhdmlf1bzl03.cloudfront.net/mcp`, then ask it: "Use Why to check this change: build an iOS version of the mobile app." It calls `why_check_change`, which answers `conflicts` with the real decision of 20 October "Develop the mobile application only for Android" and its reason (verified live on 20 October 2026; setup and the five tools: [docs/agents.md](docs/agents.md)).
 3. Follow-ups show **open** or **closed by a commit** (Oct 7 has an open one; the same text is a real todo in the owner's Bee app). A **Changed** badge marks a decision that directly contradicts an earlier one; none of the four published days contains a real change of mind, so that path is shown by the tests and approved examples (`domain/rules/w02.yaml`), not by the demo data.

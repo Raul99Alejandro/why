@@ -1,6 +1,6 @@
 # Textos para YouTube y Devpost: Why (Bee track)
 
-> Todo listo para pegar. Solo falta: subir `video/why/build/Why-Bee-track-demo.mp4` (hub) a YouTube y reemplazar `<VIDEO_URL>` aquí y en el README (`VIDEO_URL`).
+> Todo listo para pegar. Video publicado: https://youtu.be/QvHZs4ZkVLc
 
 ## YouTube
 
@@ -16,7 +16,7 @@ In this video, everything is the real product on real data: the public demo log 
 
 AI use: the code, tests and docs were written with Claude Code (Anthropic) under the owner's direction. The narration is an AI voice (Amazon Polly, generative "Matthew"); the background music was generated with Google Lyria (Gemini). The title and diagram slides are HTML animations; the Claude Code scene is a replay of a real run (text unchanged, shortened). No AI-generated video footage is used.
 
-Video: <VIDEO_URL>
+Video: https://youtu.be/QvHZs4ZkVLc
 Demo: https://dxhdmlf1bzl03.cloudfront.net/?demo
 Code: https://github.com/Raul99Alejandro/why
 
