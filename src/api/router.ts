@@ -77,7 +77,9 @@ export function createRouter(deps: { store: Store; converse: ConverseFn; speak: 
     if (req.method === 'POST' && path === '/speech') return speech(req.body);
     if (req.method === 'POST' && path === '/publish') {
       const b = parse(publishBody, req.body); if (!b) return json(400, { error: 'bad request' });
-      const pub = await publishDay({ store: deps.store, day: b.date, excludeSessions: b.excludeSessions, now: deps.now(), dryRun: b.preview, hide: texts => hideNames(texts, deps.converse) });
+      // The name review fails closed: no usable reply means nothing is published (try again).
+      const pub = await publishDay({ store: deps.store, day: b.date, excludeSessions: b.excludeSessions, now: deps.now(), dryRun: b.preview, hide: texts => hideNames(texts, deps.converse) }).catch(() => 'review_failed' as const);
+      if (pub === 'review_failed') return json(503, { error: 'name review failed, try again' });
       return pub ? json(200, pub) : NOT_FOUND;
     }
     if (req.method === 'POST' && path === '/unpublish') {

@@ -20,7 +20,11 @@ export async function ask(opts: { question: string; days: (DayLog | PublishedDay
   }).catch(() => null));
   if (!out.success) return { answer: FALLBACK, citations: [] };
   const known = new Set(opts.days.flatMap(d => d.decisions.map(x => `${d.date}|${x.sessionId}|${x.what}`)));
-  const citations = out.data.citations.filter(c => known.has(`${c.date}|${c.sessionId}|${c.decision}`));
+  // Nova often cites the whole fact line ("<what> — because <why>"); only the decision part must match a real one.
+  const decisionOf = (cited: string) => cited.split(' — because ')[0]!.trim().replace(/\.$/, '');
+  const citations = out.data.citations.map(c => ({ ...c, decision: decisionOf(c.decision) }))
+    .filter(c => known.has(`${c.date}|${c.sessionId}|${c.decision}`) || known.has(`${c.date}|${c.sessionId}|${c.decision}.`));
+  const dedupe = new Map(citations.map(c => [`${c.date}|${c.sessionId}|${c.decision}`, c]));
   if (citations.length === 0) return { answer: FALLBACK, citations: [] }; // an uncited answer must not be spoken
-  return { answer: out.data.answer, citations };
+  return { answer: out.data.answer, citations: [...dedupe.values()] };
 }

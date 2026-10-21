@@ -21,7 +21,8 @@
     "label": "tsx src/cli/label.ts",
     "accuracy": "tsx src/cli/accuracy.ts",
     "bench": "tsx scripts/bench-check.ts",
-    "mcp": "tsx src/cli/mcp.ts"
+    "mcp": "tsx src/cli/mcp.ts",
+    "publish:day": "tsx scripts/publish-day.ts"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1141.0",

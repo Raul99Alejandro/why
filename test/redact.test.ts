@@ -33,9 +33,26 @@ describe('hideNames', () => {
   it('still redacts what the model returns', async () => {
     expect(await hideNames(['Ana called'], reply(['a colleague (ana@example.com) called']))).toEqual(['a colleague ([redacted]) called']);
   });
-  it('returns the input when the reply has the wrong length or the call fails', async () => {
-    expect(await hideNames(['a', 'b'], reply(['x']))).toEqual(['a', 'b']);
-    expect(await hideNames(['a'], async () => { throw new Error('boom'); })).toEqual(['a']);
+  it('fails closed when the reply has the wrong length or the call fails twice', async () => {
+    await expect(hideNames(['a', 'b'], reply(['x', 'y', 'z']))).rejects.toThrow('name review failed');
+    await expect(hideNames(['a'], async () => { throw new Error('boom'); })).rejects.toThrow('name review failed');
+  });
+  it('reviews a failed batch one text at a time', async () => {
+    let calls = 0;
+    const merged: ConverseFn = async i => (++calls === 1 ? reply(['Ana and Luis, merged']) : reply([`role ${calls}`]))(i);
+    expect(await hideNames(['Ana', 'Luis'], merged)).toEqual(['role 2', 'role 3']);
+  });
+  it('retries a single text once', async () => {
+    let calls = 0;
+    const flaky: ConverseFn = async i => (++calls <= 2 ? reply(['x', 'y']) : reply(['a colleague']))(i);
+    expect(await hideNames(['Ana'], flaky)).toEqual(['a colleague']);
+  });
+  it('reviews long days in small batches, in order', async () => {
+    const sizes: number[] = [];
+    const echo: ConverseFn = async i => { const t = (JSON.parse((i.messages[0]!.content![0] as { text: string }).text) as { texts: string[] }).texts; sizes.push(t.length); return reply(t.map(x => x.toUpperCase()))(i); };
+    const texts = Array.from({ length: 20 }, (_, n) => `t${n}`);
+    expect(await hideNames(texts, echo)).toEqual(texts.map(t => t.toUpperCase()));
+    expect(sizes).toEqual([8, 8, 4]);
   });
   it('skips the model for an empty list', async () => {
     expect(await hideNames([], async () => { throw new Error('no'); })).toEqual([]);

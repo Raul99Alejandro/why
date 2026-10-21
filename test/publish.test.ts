@@ -22,8 +22,15 @@ describe('publish', () => {
     expect(pub!.sessions.map(s => s.id)).toEqual(['s1']);
     expect(pub!.decisions).toHaveLength(1);
     expect(JSON.stringify(pub)).not.toContain('quoteOriginal');
+    expect(pub!.decisions.every(d => d.quote === '')).toBe(true);
     expect(JSON.stringify(pub)).not.toMatch(/example\.com|1234 5678|Personal errand|Private thing/);
     expect(await store.getPublished('2026-10-03')).toEqual(pub);
+  });
+  it('replaces the block-list terms of the owner in every text, whole words only', async () => {
+    const store = new MemoryStore();
+    await store.putDay({ ...day, todos: [{ text: 'Ask Rekit and rekit.io, not Rekitten', sessionId: 's1' }] });
+    const pub = await publishDay({ store, day: '2026-10-03', excludeSessions: ['s2'], now: new Date(), blockTerms: ['rekit', ' '] });
+    expect(pub!.todos[0]!.text).toBe('Ask someone and someone.io, not Rekitten');
   });
   it('returns null for a day that does not exist', async () => {
     expect(await publishDay({ store: new MemoryStore(), day: '2026-10-09', excludeSessions: [], now: new Date() })).toBeNull();
@@ -62,7 +69,7 @@ describe('publish', () => {
     const seen: string[] = [];
     const pub = await publishDay({ store, day: '2026-10-03', excludeSessions: ['s2'], now: new Date(), hide: async t => { seen.push(...t); return t.map(x => `H(${x}) ana@example.com`); } });
     for (const x of ['sum', 'Voices', 'Use Polly', 'No credits', 'Delete old video', 'question', 'commit msg']) expect(seen).toContain(x);
-    expect(seen.some(x => x.startsWith('Call'))).toBe(true);
+    expect(seen.some(x => x.startsWith('Call'))).toBe(false); // quotes are not published, so never reviewed
     expect(pub!.commits.map(c => c.sha)).toEqual(['c1']);
     expect(pub!.commits[0]!.message).toBe('H(commit msg) [redacted]');
     expect(pub!.sessions[0]!.topic).toBe('H(Voices) [redacted]');

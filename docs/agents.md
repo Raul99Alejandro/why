@@ -12,7 +12,7 @@ Serves the published (redacted) demo copy over HTTPS:
 claude mcp add --transport http why-demo https://dxhdmlf1bzl03.cloudfront.net/mcp
 ```
 
-The path is exactly `/mcp` (no trailing slash). Try: "Use Why to check this change: switch the answer model to Claude Sonnet."
+The path is exactly `/mcp` (no trailing slash). Try: "Use Why to check this change: build an iOS version of the mobile app." On the published demo copy it answers `conflicts` with the real decision of 20 October 2026, "Develop the mobile application only for Android" (verified live).
 
 ### Local private server (your own log)
 

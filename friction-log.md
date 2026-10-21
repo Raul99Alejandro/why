@@ -163,6 +163,16 @@ Severity: **blocker** (stopped us until we changed the design), **major** (cost 
 - **Workaround:** Tap again until the watch shows it is listening, and check it before an important conversation.
 - **Suggestion:** Make the mute state change only on an explicit tap, and show a clear "not listening" state or haptic when it does.
 
+### 16. Batch name review: cut-off replies and merged texts, and our fail-open bug
+
+- **Task:** Replace names of people and clients in a real day's texts (about 50 short strings) before publishing (20 October 2026).
+- **Steps:** One forced tool call with all texts, schema `{ texts: string[] }`, answer must have the same length.
+- **Expected:** The same number of texts back, names replaced.
+- **Actual:** On real days the reply never matched: at 600 output tokens it was cut off, and with batches of eight Nova 2 Lite often returned one string containing all eight, joined with stray quotes. Our code then kept the input unchanged (fail open), so the preview showed real names. Found in the owner-side preview, before anything was published.
+- **Severity:** major (privacy; the bug was ours, the model behaviour made it visible).
+- **Workaround:** Batches of eight, a failed batch reviewed one text at a time with one retry, and fail closed (nothing is published without a usable review); quotes are no longer published; an owner block list for names the model misses.
+- **Suggestion:** Bedrock structured output that enforces array length, or guidance on reliable batch transforms with forced tool use in Nova.
+
 ## Process note
 
 Not a tool problem, but real: the shell tool used by our coding agent silently mangled backslashes and `\n` in heredocs, and large heredocs failed to parse several times; we moved edits to a file-write tool. Two of the three improvement tasks recorded it.

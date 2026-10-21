@@ -2,7 +2,7 @@ import type { DayDecision, DayLog, PublishedDay } from './domain/types.js';
 import { redact } from './redact.js';
 import type { Store } from './store/store.js';
 
-export async function publishDay(opts: { store: Store; day: string; excludeSessions: string[]; now: Date; dryRun?: boolean; hide?: (texts: string[]) => Promise<string[]> }): Promise<PublishedDay | null> {
+export async function publishDay(opts: { store: Store; day: string; excludeSessions: string[]; now: Date; dryRun?: boolean; hide?: (texts: string[]) => Promise<string[]>; blockTerms?: string[] }): Promise<PublishedDay | null> {
   const log = await opts.store.getDay(opts.day);
   if (!log) return null;
   const keep = (id: string) => !opts.excludeSessions.includes(id);
@@ -14,7 +14,7 @@ export async function publishDay(opts: { store: Store; day: string; excludeSessi
     date: log.date,
     summary: redact(log.summary),
     sessions,
-    decisions: decisions.map(({ quoteOriginal: _hidden, ...d }) => withLinks({ ...d, what: redact(d.what), why: redact(d.why), quote: redact(d.quote) }, keep)),
+    decisions: decisions.map(({ quoteOriginal: _hidden, ...d }) => withLinks({ ...d, what: redact(d.what), why: redact(d.why), quote: '' }, keep)),
     todos: log.todos.filter(t => keep(t.sessionId)).map(t => ({ ...t, text: redact(t.text) })),
     openQuestions: log.openQuestions.filter(q => keep(q.sessionId)).map(q => ({ ...q, text: redact(q.text) })),
     commits: log.commits.filter(c => referenced.has(c.sha)).map(c => ({ ...c, message: redact(c.message) })),
@@ -24,6 +24,10 @@ export async function publishDay(opts: { store: Store; day: string; excludeSessi
   };
   if (opts.hide) await applyHide(pub, opts.hide);
   mapSlots(pub, redact); // the guarantee must not depend on `hide`
+  // The owner's block list: names the model missed, replaced deterministically (whole words, any case).
+  const block = (opts.blockTerms ?? []).map(t => t.trim()).filter(t => t.length > 1);
+  const escape = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (block.length) mapSlots(pub, t => block.reduce((x, term) => x.replace(new RegExp(`\\b${escape(term)}\\b`, 'gi'), 'someone'), t));
   if (!opts.dryRun) await opts.store.putPublished(pub);
   return pub;
 }
@@ -46,7 +50,7 @@ function withLinks<T extends Omit<DayDecision, 'quoteOriginal'>>(d: T, keep: (se
 function slotsOf(pub: PublishedDay): [object, string][] {
   return [
     [pub, 'summary'], ...pub.sessions.map(s => [s, 'topic'] as [object, string]),
-    ...pub.decisions.flatMap(d => (['what', 'why', 'quote'] as const).map(k => [d, k] as [object, string])),
+    ...pub.decisions.flatMap(d => (['what', 'why'] as const).map(k => [d, k] as [object, string])),
     ...pub.decisions.flatMap(d => [
       ...(d.change?.from ?? []).map(f => [f, 'what'] as [object, string]), ...(d.change?.commits ?? []).map(c => [c, 'message'] as [object, string]),
       ...(d.followUp ? [[d.followUp, 'text'] as [object, string]] : [])

@@ -8,12 +8,13 @@ Why listens (through a [Bee](https://bee.computer) wearable) to the owner's real
 
 ### Judges' quick path (3 minutes)
 
-1. **Open the [demo](https://dxhdmlf1bzl03.cloudfront.net/?demo)** and read one day: decisions, the reason for each, a short quote, linked commits, and the line "N personal conversations ignored".
-2. **For coding agents**: connect Claude Code to the live demo with one command, `claude mcp add --transport http why-demo https://dxhdmlf1bzl03.cloudfront.net/mcp`, then ask it: "Use Why to check this change: switch the answer model to Claude Sonnet." It calls `why_check_change` and reports any past decision the change would contradict (setup and the five tools: [docs/agents.md](docs/agents.md)).
-3. Look for a **Changed** badge: a decision that directly contradicts an earlier one, with both days linked and the old decision's commits listed as "work that may need undoing". Follow-ups show **open** or **closed by a commit**.
-4. **Ask** by voice or text: "What did I decide about ...?" The answer cites its sources; an unknown topic gets "I couldn't find that", never an invented answer.
+0. **Watch the [video](VIDEO_URL)** (under 3 minutes, real product and real data).
+1. **Open the [demo](https://dxhdmlf1bzl03.cloudfront.net/?demo)** and read a real day (start with Tue Oct 20): decisions, the reason for each, pending items, open questions, and the line "N personal conversations ignored". Four real work days (7, 9, 15 and 20 October 2026) are published.
+2. **For coding agents**: connect Claude Code to the live demo with one command, `claude mcp add --transport http why-demo https://dxhdmlf1bzl03.cloudfront.net/mcp`, then ask it: "Use Why to check this change: build an iOS version of the mobile app." It calls `why_check_change`, which answers `conflicts` with the real decision of 20 October "Develop the mobile application only for Android" and its reason (verified live on 20 October 2026; setup and the five tools: [docs/agents.md](docs/agents.md)).
+3. Follow-ups show **open** or **closed by a commit** (Oct 7 has an open one; the same text is a real todo in the owner's Bee app). A **Changed** badge marks a decision that directly contradicts an earlier one; none of the four published days contains a real change of mind, so that path is shown by the tests and approved examples (`domain/rules/w02.yaml`), not by the demo data.
+4. **Ask** by voice or text: "What did I decide about the mobile app?" The answer cites its sources and Amazon Polly reads it out; an unknown topic gets "I couldn't find that", never an invented answer.
 5. **Alexa**: the same question out loud through the skill "Why decisions" (steps in [Ask Alexa](#ask-alexa); it runs in the developer console simulator).
-6. **Bee itself**: the reversal alert and the follow-ups are Bee todos in the owner's own Bee app (see [How reversal alerts and Bee todos work](#how-reversal-alerts-and-bee-todos-work)); the [video](docs/video-script.md) script shows them arriving.
+6. **Bee itself**: the reversal alert and the follow-ups are Bee todos in the owner's own Bee app (see [How reversal alerts and Bee todos work](#how-reversal-alerts-and-bee-todos-work)); the [video](docs/video-script.md) shows a real follow-up todo that Why wrote into Bee on 7 October.
 7. Evidence: [docs/security.md](docs/security.md), [friction-log.md](friction-log.md), [docs/product-feedback.md](docs/product-feedback.md), the [Verified](#verified) table, and [Measured accuracy](#measured-accuracy).
 
 ### What changed since 3 October
@@ -28,7 +29,7 @@ Why started as a daily decision log. It now acts while you work:
 | Ask by page, voice via the browser | Also **Alexa**: "what did we decide about ..." (skill and endpoint in the repo, simulator) |
 | A log for people | **Also for coding agents**: MCP tools check a planned change against past decisions, locally or through a public read-only endpoint ([docs/agents.md](docs/agents.md)) |
 | No quality number | A local labeling tool and `npm run accuracy` so precision and recall can be measured on a real day ([Measured accuracy](#measured-accuracy)) |
-| 151 tests | 308 tests, the domain rules (work filter, reversal, follow-up) written as approved examples in `domain/` |
+| 151 tests | 314 tests, the domain rules (work filter, reversal, follow-up) written as approved examples in `domain/` |
 
 ### Try the live demo, nothing to install
 
@@ -42,8 +43,8 @@ What to try:
 
 What is real and what is filtered:
 
-- The data is the owner's **real Bee recordings**, not a script. Nova 2 Lite extracted the log from Spanish speech.
-- The demo shows **only days the owner reviewed and published**. Before publishing, the owner previews a filtered copy: emails, phone numbers, card numbers and credential links are redacted, names of other people become a role ("a colleague"), original-language quotes are dropped, and the owner can exclude whole sessions.
+- The data is the owner's **real Bee recordings** (client calls and team meetings), not a script. Nova 2 Lite extracted the log from Spanish speech.
+- The demo shows **only days the owner approved for publishing**. The published copy is filtered: emails, phone numbers, card numbers and credential links are redacted; names of people, clients, client companies and their projects become a role ("a colleague", "a client project"); verbatim quotes are never published; whole sessions can be excluded (four personal or commercially sensitive sessions were). The name review fails closed: if the model gives no usable answer, nothing is published.
 - Raw transcripts and unpublished days never reach the demo: it runs on a separate Lambda whose IAM role can read only `PUB#` keys (see [Security](#security-and-privacy)).
 - The private site (same URL without `?demo`) is for the owner only: Cognito sign-in with TOTP MFA.
 
@@ -164,7 +165,7 @@ The data is a person's spoken conversations, so the design starts from the worst
 - **Demo isolation by IAM, not just code.** A separate Lambda role may only `GetItem`/`Query` keys beginning `PUB#`, so it cannot read a private day even if the code were wrong. A private day and a missing day return the same 404.
 - **Secrets stay local.** The Bee token never leaves the owner's PC. The sync IAM user can touch only the table, its key (via DynamoDB) and Nova; its access key sits in a local profile and can be revoked.
 - **Encryption and transport.** Own KMS key with rotation, HTTPS only, private S3 bucket behind CloudFront OAC, Function URLs with `AWS_IAM` reachable only through the distribution.
-- **Personal data.** Three-step publish gate with a mandatory preview; the guarantee never depends on the model.
+- **Personal data.** Three-step publish gate with a mandatory preview. Pattern redaction never depends on the model; the name review does, so it runs in small batches and fails closed (no usable answer, nothing published), and the owner can add a deterministic block list for names it misses. Verbatim quotes are never published.
 - **Prompt injection.** Transcript, question and log are treated as data; the model has no actions (one forced tool, or answer plus citations); wrapper tags are neutralised; citations are validated; the page escapes all text.
 - **No text in logs, cost capped.** Logs carry ids, counts and timings only. The demo has a per-IP and daily limiter (best effort; no WAF, a known gap).
 - **Guard rails in the build.** `cdk-nag` (AWS Solutions pack) runs on the stack and every accepted finding is suppressed individually with a reason.
@@ -178,14 +179,15 @@ Each claim, how to check it yourself, and the evidence.
 | Claim | How to check | Evidence |
 | --- | --- | --- |
 | Why runs on real Bee data, and we recorded how Bee really behaves | Read the friction log and [docs/bee-api.md](docs/bee-api.md) | [friction-log.md](friction-log.md) entries 1 to 7 give observed shapes (a conversation stuck `CAPTURING` for 20+ hours, `transcriptions[].utterances`, the private CA); entry 1 is reported upstream: [bee-cli issue 21](https://github.com/bee-computer/bee-cli/issues/21) |
-| Reversal alerts arrive as Bee todos | `npx vitest run test/ledger.test.ts test/ledger-safety.test.ts test/bee/todos.test.ts`; watch the video | Tests `creates todos and reports counts only, and survives a Bee outage` and `saves the todo as creating before calling Bee`; [video script](docs/video-script.md) shot 4 (0:45 to 1:12) |
-| Follow-ups close when a matching commit lands | `npx vitest run test/ledger.test.ts` | `judges a commit once per follow-up, ignores older commits, and shows closed on the page data`; video shot 6 (1:22 to 1:42) |
+| Reversal alerts arrive as Bee todos | `npx vitest run test/ledger.test.ts test/ledger-safety.test.ts test/bee/todos.test.ts`; watch the video | Tests `creates todos and reports counts only, and survives a Bee outage` and `saves the todo as creating before calling Bee`. Live: the 7 October follow-up is todo 29066382 in the owner's Bee app ([video](docs/video-script.md) shot 5). No real reversal happened in the published days, so no live alert is claimed |
+| Follow-ups close when a matching commit lands | `npx vitest run test/ledger.test.ts` | `judges a commit once per follow-up, ignores older commits, and shows closed on the page data`. Not shown live: the real follow-ups are client work outside the public repos, so no commit has closed one |
 | Personal speech is discarded before storage | `npx vitest run test/workfilter.test.ts`; read the Data minimization section of [docs/security.md](docs/security.md) | Work-hours and work-or-personal check tests in `test/workfilter.test.ts`; only a counter is stored |
 | The public demo reads only `PUB#` keys | `npx vitest run test/infra/stack.test.ts`; read the Least privilege section of [docs/security.md](docs/security.md) | The demo and MCP functions' IAM statements carry the condition `dynamodb:LeadingKeys` = `PUB#*`, with `GetItem`/`Query` only (`test/infra/stack.test.ts`) |
 | The MCP endpoint is live | `curl -s -X POST https://dxhdmlf1bzl03.cloudfront.net/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'` | Lists `why_check_change`, `why_explain_commit`, `why_search`, `why_ask`, `why_open_followups`; calls straight to the function URL are refused (403) |
 | The agent check finds conflicts (*synthetic, 12 cases*) | `npm run bench` (needs Bedrock access); cases in `test/agent/bench-cases.ts` | Run 2026-10-09 with `us.amazon.nova-2-lite-v1:0`: conflicts precision 1.00, recall 1.00, F1 1.00 (tp 5, fp 0, fn 0); overall accuracy 0.83 (10/12); both misses were clear cases judged as refines, the safe direction. 12 invented cases (5 conflicts, 3 refines, 4 clear), not real decisions |
-| Extraction quality on a real day | `npm run accuracy` after `npm run label` ([Measured accuracy](#measured-accuracy)) | Pending owner labels. No number is claimed until a real day is labeled |
-| The test suite passes | `npm test` | 308 tests passing |
+| A coding agent is stopped by a real decision | `claude mcp add --transport http why-demo https://dxhdmlf1bzl03.cloudfront.net/mcp`, then "Use Why to check this change: build an iOS version of the mobile app." | Verified live on 20 October 2026: `why_check_change` returned `conflicts` with "Develop the mobile application only for Android" (2026-10-20, "Most operators use Android devices"); the video shows a Claude Code run stopping before any edit |
+| Extraction quality on a real day | `npm run accuracy` after `npm run label` ([Measured accuracy](#measured-accuracy)) | **Not measured.** The owner did not hand-label a real day before the deadline, so no real-day precision or recall is claimed. The only numbers in this README are the synthetic agent-check bench above |
+| The test suite passes | `npm test` | 314 tests passing |
 
 ## Measured accuracy
 
@@ -204,15 +206,15 @@ The page shows the day's utterances, so it runs only on the owner's machine with
 
 | Day | Why decisions | Real decisions | Precision | Recall | F1 |
 | --- | --- | --- | --- | --- | --- |
-| *to be filled by the owner* | | | | | |
+| *not labeled* | | | | | |
 
-No number is claimed until the owner has labeled a day.
+Not measured: no real day was hand-labeled before the submission deadline, so no number is claimed. The tool is ready for it (`npm run label`, `npm run accuracy`).
 
 ## Evidence
 
 What exists today:
 
-- Test suite: **308 tests**, passing (`npm test`), covering the MCP tools and the public endpoint, the analyzer, the work filter, reversal and follow-up logic with the approved domain examples, redaction, publishing, the API, the Alexa endpoint, the CDK stack's IAM and CloudFront settings, the labeling tool and the web renderer.
+- Test suite: **314 tests**, passing (`npm test`), covering the MCP tools and the public endpoint, the analyzer, the work filter, reversal and follow-up logic with the approved domain examples, redaction, publishing, the API, the Alexa endpoint, the CDK stack's IAM and CloudFront settings, the labeling tool and the web renderer.
 - Friction log and product feedback: [friction-log.md](friction-log.md), [docs/product-feedback.md](docs/product-feedback.md).
 - Security document with a test named for every control: [docs/security.md](docs/security.md).
 - `cdk-nag` AWS Solutions checks run on every synth; the stack synthesizes clean, with each suppression justified in `infra/lib/why-stack.ts`.
@@ -268,7 +270,7 @@ Outputs include `SiteUrl`, `DemoUrl` (`SiteUrl?demo`), `UserPoolId`, `ClientId` 
 2. Run once by hand to check it: `AWS_PROFILE=why-sync TABLE=<table name from cdk-outputs.local.json> npm run sync` (it prints counts only).
 3. Register the scheduled task (Windows, PowerShell, as your user): `powershell -File scripts/register-sync-task.ps1`. It runs "Why Bee sync" every 5 minutes while you are logged on and logs counts to `%LOCALAPPDATA%\why\sync.log`. Remove it with `scripts/unregister-sync-task.ps1`.
    To change the schedule, edit `-RepetitionInterval` in `scripts/register-sync-task.ps1` and run it again (it replaces the existing task). The day log of today is rebuilt at most every 30 minutes when nothing new arrived, so the 5-minute run stays cheap.
-4. In the private site, review a day, preview the filtered copy, and publish it. Only then does it appear in the demo.
+4. In the private site, review a day, preview the filtered copy, and publish it. Only then does it appear in the demo. From the PC you can do the same with `npm run publish:day -- <day> [--exclude <sessionIds>] [--block <names>]` (dry run to `data/preview-<day>.json`; add `--publish` to save); `--block` replaces names the model missed, deterministically. The four demo days were published this way, with four sessions excluded.
 
 The sync's repo list and time zone are set in `src/cli/sync.ts`; edit them for your own use.
 

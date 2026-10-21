@@ -87,7 +87,7 @@ function decisionItem(d: Day['decisions'][number], bySha: Map<string, CommitRef>
     + `<div class="d-body"><h3 class="d-what">${e(d.what)}</h3>`
     + changeNotes(d)
     + `<p class="d-why"><span class="why-mark">Why</span><span class="why-text">${e(d.why)}</span></p>`
-    + `<p class="d-quote">“${e(d.quote)}” <span class="d-at">heard at ${e(time(d.at))}</span></p>${original}`
+    + (d.quote ? `<p class="d-quote">“${e(d.quote)}” <span class="d-at">heard at ${e(time(d.at))}</span></p>` : `<p class="d-quote"><span class="d-at">heard at ${e(time(d.at))}, verbatim quote kept private</span></p>`) + original
     + (commits.length ? `<div class="d-commits">${commits.map(commitTag).join('')}</div>` : '') + `</div></li>`;
 }
 
@@ -165,7 +165,7 @@ export function answerHtml(out: { answer: string; citations: { date: string; dec
 }
 
 export const previewBarHtml = (date: string) =>
-  `<div class="preview-bar" role="region" aria-label="Publish preview"><p><strong>Preview of what the judges will see.</strong> Original-language quotes and owner controls are removed.</p>`
+  `<div class="preview-bar" role="region" aria-label="Publish preview"><p><strong>Preview of what the judges will see.</strong> Quotes and owner controls are removed, and names of people and clients become roles.</p>`
   + `<div class="preview-actions"><button type="button" class="btn ghost" data-action="cancel-preview">Cancel</button><button type="button" class="btn primary" data-action="confirm-publish" data-date="${e(date)}">Publish to demo</button></div></div>`;
 
 /** "Synced 42 min ago" style label for the header pill. */

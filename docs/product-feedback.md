@@ -20,12 +20,12 @@ Answers per tool, following Devpost's five questions in order: (1) Which develop
 
 ## Alexa Skills Kit
 
-Verified in simulator: pending (the endpoint and skill are not deployed yet; everything below is from code, fixtures and documentation, not from a live run).
+Verified in simulator on 6 October 2026: the skill launches and a request passes signature verification; at that time no day was published, so it answered with the fallback. Latency was not measured.
 
 1. **Used for.** A custom skill (`AskWhyIntent`, `AMAZON.SearchQuery`) and the `ask` CLI, answering "what did we decide about ..." from the published copy.
-2. **What worked well.** One intent and one slot were enough; the developer console simulator removes the need for a device. Verified in simulator: pending.
+2. **What worked well.** One intent and one slot were enough; the developer console simulator removes the need for a device.
 3. **What needs work.** Alexa cannot sign with IAM, so our Function URL verifies the certificate chain, signature, timestamp and skill id itself, which needs raw headers and body. The 8-second limit is tight for a certificate fetch plus a model call (latency not measured live). The `ask` login had expired. We want a built-in verifier and a mock signed-request generator. Manifest fields (privacy URL, certificate type) are untested live.
-4. **Onboarding.** Verified in simulator: pending. Request-verification rules are documented but spread over several pages.
+4. **Onboarding.** Request-verification rules are documented but spread over several pages.
 5. **Build again: Yes, provisionally.** Voice access to a user's own data is valuable if verification gets easier; confirm after the simulator test.
 
 ## AWS CDK, Lambda, DynamoDB, CloudFront and Cognito

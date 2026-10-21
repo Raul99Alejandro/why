@@ -13,6 +13,12 @@ describe('ask', () => {
     const out = await ask({ question: 'Why Polly?', days, converse });
     expect(out.citations[0]!.date).toBe('2026-10-03');
   });
+  it('accepts a citation that repeats the whole fact line, matched on the decision part only', async () => {
+    const converse: ConverseFn = async () => reply({ answer: 'Polly.', citations: [{ date: '2026-10-03', sessionId: 's1', decision: 'Use Polly for the mechanic — because ElevenLabs ran out of credits' }] });
+    expect((await ask({ question: 'Why Polly?', days, converse })).citations).toEqual([{ date: '2026-10-03', sessionId: 's1', decision: 'Use Polly for the mechanic' }]);
+    const wrong: ConverseFn = async () => reply({ answer: 'x', citations: [{ date: '2026-10-03', sessionId: 's1', decision: 'Use Polly — because made up' }] });
+    expect((await ask({ question: 'q', days, converse: wrong })).citations).toEqual([]);
+  });
   it('drops citations to decisions that do not exist', async () => {
     const converse: ConverseFn = async () => reply({ answer: 'x', citations: [{ date: '2026-10-09', sessionId: 'zz', decision: 'made up' }] });
     expect((await ask({ question: 'q', days, converse })).citations).toEqual([]);

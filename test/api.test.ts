@@ -7,11 +7,16 @@ import type { DayLog } from '../src/domain/types.js';
 
 const day: DayLog = { date: '2026-10-03', summary: 'Private summary', sessions: [{ id: 's1', startedAt: 'a', endedAt: 'b', topic: 't' }], decisions: [], todos: [], openQuestions: [], commits: [], updatedAt: 'u' };
 const req = (method: string, path: string, extra: Partial<ApiRequest> = {}): ApiRequest => ({ method, path, query: {}, headers: {}, body: null, ip: '1.1.1.1', ...extra });
+/** Answers the name review by echoing its texts; anything else gets an empty reply. */
+const echoNames = async (input: { messages: Message[] }): Promise<Message> => {
+  const text = input.messages[0]?.content?.[0]?.text ?? '';
+  return text.startsWith('{"count"') ? { role: 'assistant', content: [{ toolUse: { toolUseId: 't', name: 'save_texts', input: { texts: JSON.parse(text).texts } as never } }] } : { role: 'assistant', content: [] };
+};
 async function setup() {
   const store = new MemoryStore();
   await store.putDay(day);
   const route = createRouter({
-    store, converse: async (): Promise<Message> => ({ role: 'assistant', content: [] }), speak: async () => new Uint8Array([1, 2]),
+    store, converse: echoNames as never, speak: async () => new Uint8Array([1, 2]),
     verify: async h => h === 'Bearer good', limits: new Limits(100, 1000), recompile: async () => null, now: () => new Date('2026-10-05T00:00:00Z')
   });
   return { store, route };
@@ -37,6 +42,14 @@ describe('api', () => {
     const pub = await route(req('POST', '/publish', { headers: { authorization: 'Bearer good' }, body: JSON.stringify({ date: '2026-10-03', excludeSessions: [] }) }));
     expect(pub.status).toBe(200);
     expect((await route(req('GET', '/demo/days/2026-10-03'))).status).toBe(200);
+  });
+  it('refuses to publish when the name review fails, and publishes nothing', async () => {
+    const store = new MemoryStore();
+    await store.putDay(day);
+    const route = createRouter({ store, converse: async () => ({ role: 'assistant', content: [] }), speak: async () => new Uint8Array(), verify: async h => h === 'Bearer good', limits: new Limits(100, 1000), recompile: async () => null, now: () => new Date() });
+    const pub = await route(req('POST', '/publish', { headers: { authorization: 'Bearer good' }, body: JSON.stringify({ date: '2026-10-03', excludeSessions: [] }) }));
+    expect(pub.status).toBe(503);
+    expect(await store.getPublished('2026-10-03')).toBeNull();
   });
   it('has no demo route for publishing or forgetting', async () => {
     const { route } = await setup();
